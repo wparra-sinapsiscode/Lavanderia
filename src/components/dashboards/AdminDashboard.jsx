@@ -1,0 +1,627 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../store/AuthContext';
+import { serviceStorage, hotelStorage, storage, financeStorage } from '../../utils/storage';
+import { formatCurrency, formatDate } from '../../utils';
+import { APP_CONFIG } from '../../constants';
+import dashboardService from '../../services/dashboard.service';
+import { useNotifications } from '../../store/NotificationContext';
+import Card from '../ui/Card';
+import { 
+  TrendingUp, 
+  Users, 
+  Package, 
+  DollarSign, 
+  Building, 
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Truck
+} from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const AdminDashboard = () => {
+  const { user } = useAuth();
+  const { showNotification } = useNotifications();
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netIncome: 0,
+    totalServices: 0,
+    totalHotels: 0,
+    totalRepartidores: 0,
+    averageServiceValue: 0,
+    completionRate: 0,
+    todayServices: 0,
+    pendingServices: 0
+  });
+
+  const [chartData, setChartData] = useState({
+    revenueChart: [],
+    servicesChart: [],
+    statusChart: [],
+    hotelChart: []
+  });
+
+  const [recentActivities, setRecentActivities] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [timePeriod, setTimePeriod] = useState('month');
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [timePeriod]);
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Try to fetch data from backend API
+      const adminMetrics = await dashboardService.getDashboardSummary(timePeriod);
+      const serviceStats = await dashboardService.getServiceStats(timePeriod);
+      const financialStats = await dashboardService.getFinancialStats(timePeriod);
+      const hotelStats = await dashboardService.getHotelStats(timePeriod);
+      
+      // Check if we have valid data from the API
+      const hasValidFinancialStats = financialStats && financialStats.summary;
+      const hasValidAdminMetrics = adminMetrics && adminMetrics.servicesByStatus;
+      
+      if (!hasValidFinancialStats || !hasValidAdminMetrics) {
+        throw new Error('Datos incompletos del API');
+      }
+      
+      // Update stats from backend data
+      setStats({
+        totalRevenue: hasValidFinancialStats ? financialStats.summary.revenue || 0 : 0,
+        totalExpenses: hasValidFinancialStats ? financialStats.summary.expenses || 0 : 0,
+        netIncome: hasValidFinancialStats ? financialStats.summary.profit || 0 : 0,
+        totalServices: adminMetrics.totalServices || 0,
+        totalHotels: (adminMetrics.topHotels && adminMetrics.topHotels.length) || 0,
+        totalRepartidores: adminMetrics.repartidores || 0,
+        averageServiceValue: serviceStats && serviceStats.avgServiceValue ? serviceStats.avgServiceValue : 0,
+        completionRate: hasValidAdminMetrics && adminMetrics.servicesByStatus.COMPLETED > 0 && adminMetrics.totalServices > 0 ? 
+          (adminMetrics.servicesByStatus.COMPLETED / adminMetrics.totalServices) * 100 : 0,
+        todayServices: adminMetrics.completedToday || 0,
+        pendingServices: adminMetrics.pendingPickup || 0
+      });
+      
+      // Prepare chart data from API response
+      prepareApiChartData(adminMetrics, serviceStats, financialStats, hotelStats);
+      loadApiRecentActivities();
+    } catch (error) {
+      console.error('Error loading dashboard data from API:', error);
+      showNotification({
+        type: 'error',
+        message: 'Error al cargar datos del dashboard. Usando datos locales.'
+      });
+      
+      // Fallback to local storage if API fails
+      loadLocalDashboardData();
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const loadLocalDashboardData = () => {
+    const services = serviceStorage.getServices();
+    const hotels = hotelStorage.getHotels();
+    const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
+    const transactions = financeStorage.getTransactions();
+
+    // Calculate financial stats from finance module
+    const incomeTransactions = transactions.filter(t => t.type === 'income');
+    const expenseTransactions = transactions.filter(t => t.type === 'expense');
+    const totalRevenue = incomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const totalExpenses = expenseTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const netIncome = totalRevenue - totalExpenses;
+    
+    const totalServices = services.length;
+    const totalHotels = hotels.length;
+    const totalRepartidores = users.filter(u => u.role === 'repartidor').length;
+    const averageServiceValue = incomeTransactions.length > 0 ? totalRevenue / incomeTransactions.length : 0;
+    const completedServices = services.filter(s => s.status === 'completado').length;
+    const completionRate = totalServices > 0 ? (completedServices / totalServices) * 100 : 0;
+
+    const today = new Date().toDateString();
+    const todayServices = services.filter(s => 
+      new Date(s.timestamp).toDateString() === today
+    ).length;
+    const pendingServices = services.filter(s => 
+      s.status === 'pendiente_recojo' || s.status === 'recogido' || s.status === 'en_proceso'
+    ).length;
+
+    setStats({
+      totalRevenue,
+      totalExpenses,
+      netIncome,
+      totalServices,
+      totalHotels,
+      totalRepartidores,
+      averageServiceValue,
+      completionRate,
+      todayServices,
+      pendingServices
+    });
+
+    // Prepare chart data
+    prepareLocalChartData(services, hotels, transactions);
+    loadLocalRecentActivities();
+  };
+
+  const prepareApiChartData = (adminMetrics, serviceStats, financialStats, hotelStats) => {
+    try {
+      // Check if we have valid data structures
+      const hasValidFinancialData = financialStats && financialStats.dailyRevenue && Array.isArray(financialStats.dailyRevenue);
+      const hasValidStatusData = adminMetrics && adminMetrics.servicesByStatus;
+      const hasValidHotelData = adminMetrics && adminMetrics.topHotels && Array.isArray(adminMetrics.topHotels);
+      
+      // Format daily revenue and expenses data
+      const revenueChart = hasValidFinancialData ? financialStats.dailyRevenue.map((day, index) => {
+        const expenseData = financialStats.dailyExpenses && financialStats.dailyExpenses[index] || { expenses: 0 };
+        return {
+          date: new Date(day.day).toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' }),
+          revenue: day.revenue || 0,
+          expenses: expenseData.expenses || 0,
+          services: serviceStats && serviceStats.dailyServices ? 
+            (serviceStats.dailyServices[index]?.count || 0) : 0
+        };
+      }).slice(-7) : []; // Last 7 days
+      
+      // Services by status
+      const statusChart = hasValidStatusData ? [
+        { name: 'Pendientes', value: adminMetrics.servicesByStatus.PENDING_PICKUP || 0, color: '#f59e0b' },
+        { name: 'Recogidos', value: adminMetrics.servicesByStatus.PICKED_UP || 0, color: '#3b82f6' },
+        { name: 'Rotulados', value: adminMetrics.servicesByStatus.LABELED || 0, color: '#6366f1' },
+        { name: 'En Proceso', value: adminMetrics.servicesByStatus.IN_PROCESS || 0, color: '#8b5cf6' },
+        { name: 'Entrega Parcial', value: adminMetrics.servicesByStatus.PARTIAL_DELIVERY || 0, color: '#f97316' },
+        { name: 'Completados', value: adminMetrics.servicesByStatus.COMPLETED || 0, color: '#10b981' }
+      ].filter(item => item.value > 0) : [];
+      
+      // Services by hotel
+      const hotelChart = hasValidHotelData ? adminMetrics.topHotels.map(hotel => ({
+        name: hotel.name ? hotel.name.replace('Hotel ', '') : 'Hotel Desconocido',
+        services: hotel.services || 0,
+        revenue: hotel.revenue || 0
+      })) : [];
+      
+      setChartData({
+        revenueChart: revenueChart.length > 0 ? revenueChart : [],
+        servicesChart: revenueChart.length > 0 ? revenueChart : [],
+        statusChart: statusChart.length > 0 ? statusChart : [],
+        hotelChart: hotelChart.length > 0 ? hotelChart : []
+      });
+    } catch (error) {
+      console.error('Error preparing API chart data:', error);
+      // If there's any error in parsing API data, set empty charts
+      setChartData({
+        revenueChart: [],
+        servicesChart: [],
+        statusChart: [],
+        hotelChart: []
+      });
+    }
+  };
+  
+  const loadApiRecentActivities = async () => {
+    try {
+      // Try to fetch audit logs from API
+      const response = await dashboardService.getAuditLogs();
+      if (response && response.logs && Array.isArray(response.logs)) {
+        setRecentActivities(response.logs.slice(0, 10));
+      } else {
+        throw new Error('Respuesta de logs de auditoría inválida');
+      }
+    } catch (error) {
+      console.error('Error loading audit logs:', error);
+      // Fallback to local storage
+      loadLocalRecentActivities();
+    }
+  };
+  
+  const prepareLocalChartData = (services, hotels, transactions) => {
+    // Revenue chart data (last 7 days) from finance module
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      return date;
+    });
+
+    const revenueChart = last7Days.map(date => {
+      const dayIncomeTransactions = transactions.filter(t => 
+        t.type === 'income' && 
+        new Date(t.timestamp).toDateString() === date.toDateString()
+      );
+      const dayExpenseTransactions = transactions.filter(t => 
+        t.type === 'expense' && 
+        new Date(t.timestamp).toDateString() === date.toDateString()
+      );
+      const dayServices = services.filter(s => 
+        new Date(s.timestamp).toDateString() === date.toDateString()
+      );
+      
+      return {
+        date: date.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' }),
+        revenue: dayIncomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
+        expenses: dayExpenseTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
+        services: dayServices.length
+      };
+    });
+
+    // Services by status
+    const statusChart = [
+      { name: 'Pendientes', value: services.filter(s => s.status === 'pendiente_recojo').length, color: '#f59e0b' },
+      { name: 'Recogidos', value: services.filter(s => s.status === 'recogido').length, color: '#3b82f6' },
+      { name: 'Rotulados', value: services.filter(s => s.status === 'rotulado').length, color: '#6366f1' },
+      { name: 'En Proceso', value: services.filter(s => s.status === 'en_proceso').length, color: '#8b5cf6' },
+      { name: 'Entrega Parcial', value: services.filter(s => s.status === 'entrega_parcial').length, color: '#f97316' },
+      { name: 'Completados', value: services.filter(s => s.status === 'completado').length, color: '#10b981' }
+    ].filter(item => item.value > 0);
+
+    // Services by hotel (using estimated revenue based on services)
+    const hotelChart = hotels.map(hotel => {
+      const hotelServices = services.filter(s => s.hotelId === hotel.id);
+      // Estimate revenue: average transaction amount * number of services for this hotel
+      const avgTransactionAmount = transactions.filter(t => t.type === 'income').length > 0 
+        ? transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0) / transactions.filter(t => t.type === 'income').length
+        : 0;
+      return {
+        name: hotel.name.replace('Hotel ', ''),
+        services: hotelServices.length,
+        revenue: hotelServices.length * avgTransactionAmount
+      };
+    }).sort((a, b) => b.services - a.services).slice(0, 5);
+
+    setChartData({
+      revenueChart,
+      servicesChart: revenueChart,
+      statusChart,
+      hotelChart
+    });
+  };
+
+  const loadLocalRecentActivities = () => {
+    const auditLog = storage.get(APP_CONFIG.STORAGE_KEYS.AUDIT_LOG) || [];
+    const recent = auditLog
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 10);
+    setRecentActivities(recent);
+  };
+
+  const StatCard = ({ title, value, icon: Icon, color = 'blue', subtitle, trend }) => (
+    <Card>
+      <Card.Content className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-600">{title}</p>
+            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
+          </div>
+          <div className={`p-3 rounded-full bg-${color}-100`}>
+            <Icon className={`h-6 w-6 text-${color}-600`} />
+          </div>
+        </div>
+        {trend && (
+          <div className="mt-2 flex items-center">
+            <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+            <span className="text-sm text-green-600">{trend}</span>
+          </div>
+        )}
+      </Card.Content>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-8">
+      {/* Welcome Header */}
+      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl p-8 text-white shadow-lg">
+        {loading && <div className="absolute inset-0 bg-black bg-opacity-10 flex items-center justify-center rounded-xl">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+        </div>}
+        <div className="flex items-center">
+          <img
+            src="/Logo.jfif"
+            alt="Fumy Limp Logo"
+            className="h-16 w-auto mr-6 rounded-lg"
+          />
+          <div>
+            <h1 className="text-3xl font-bold mb-3">
+              Bienvenido, {user?.name}
+            </h1>
+            <p className="text-primary-100 text-lg">
+              Dashboard Administrativo - Gestión Completa de Fumy Limp
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Ingresos Totales"
+          value={formatCurrency(stats.totalRevenue)}
+          icon={DollarSign}
+          color="green"
+          trend="+12% vs mes anterior"
+        />
+        <StatCard
+          title="Servicios Totales"
+          value={stats.totalServices}
+          icon={Package}
+          color="blue"
+          subtitle={`${stats.todayServices} hoy`}
+        />
+        <StatCard
+          title="Hoteles Activos"
+          value={stats.totalHotels}
+          icon={Building}
+          color="purple"
+        />
+        <StatCard
+          title="Repartidores"
+          value={stats.totalRepartidores}
+          icon={Users}
+          color="indigo"
+        />
+      </div>
+
+      {/* Financial Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard
+          title="Gastos Totales"
+          value={formatCurrency(stats.totalExpenses)}
+          icon={TrendingUp}
+          color="red"
+          subtitle="Egresos registrados"
+        />
+        <StatCard
+          title="Utilidad Neta"
+          value={formatCurrency(stats.netIncome)}
+          icon={DollarSign}
+          color={stats.netIncome >= 0 ? "green" : "red"}
+          subtitle="Ingresos - Gastos"
+        />
+        <StatCard
+          title="Valor Promedio"
+          value={formatCurrency(stats.averageServiceValue)}
+          icon={TrendingUp}
+          color="blue"
+          subtitle="Por transacción de ingreso"
+        />
+      </div>
+
+      {/* Operational Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <StatCard
+          title="Tasa de Completado"
+          value={`${stats.completionRate.toFixed(1)}%`}
+          icon={CheckCircle}
+          color="green"
+        />
+        <StatCard
+          title="Servicios Pendientes"
+          value={stats.pendingServices}
+          icon={Clock}
+          color="yellow"
+        />
+        <StatCard
+          title="Servicios Hoy"
+          value={stats.todayServices}
+          icon={Truck}
+          color="blue"
+        />
+        <StatCard
+          title="Promedio Diario"
+          value={Math.round(stats.totalServices / 7)}
+          icon={Package}
+          color="purple"
+          subtitle="Servicios por día"
+        />
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Financial Chart */}
+        <Card>
+          <Card.Header>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Ingresos vs Gastos - Últimos 7 Días
+              </h3>
+              <select 
+                value={timePeriod}
+                onChange={(e) => setTimePeriod(e.target.value)}
+                className="text-sm border border-gray-300 rounded-md px-2 py-1"
+              >
+                {dashboardService.getTimePeriodOptions().map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+          </Card.Header>
+          <Card.Content>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData.revenueChart}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip formatter={(value, name) => [
+                    formatCurrency(value), 
+                    name === 'revenue' ? 'Ingresos' : 'Gastos'
+                  ]} />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="revenue" 
+                    stroke="#10b981" 
+                    strokeWidth={3}
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                    name="Ingresos"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="expenses" 
+                    stroke="#ef4444" 
+                    strokeWidth={3}
+                    dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                    name="Gastos"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Card.Content>
+        </Card>
+
+        {/* Services by Status */}
+        <Card>
+          <Card.Header>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Servicios por Estado
+            </h3>
+          </Card.Header>
+          <Card.Content>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData.statusChart}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {chartData.statusChart.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </Card.Content>
+        </Card>
+      </div>
+
+      {/* Hotels Performance and Recent Activities */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top Hotels */}
+        <Card>
+          <Card.Header>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Top 5 Hoteles por Servicios
+            </h3>
+          </Card.Header>
+          <Card.Content>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData.hotelChart}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="services" fill="#3b82f6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card.Content>
+        </Card>
+
+        {/* Recent Activities */}
+        <Card>
+          <Card.Header>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Actividad Reciente
+            </h3>
+          </Card.Header>
+          <Card.Content className="p-0">
+            <div className="max-h-80 overflow-y-auto">
+              {recentActivities.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p>No hay actividad reciente</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {recentActivities.map((activity, index) => (
+                    <div key={index} className="p-4">
+                      <div className="flex items-start">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            {activity.action.replace('_', ' ')}
+                          </p>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {activity.details}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {activity.user} - {formatDate(activity.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card.Content>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <Card>
+        <Card.Header>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Acciones Rápidas
+          </h3>
+        </Card.Header>
+        <Card.Content>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <a
+              href="/guest-registration"
+              className="flex items-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <Users className="h-8 w-8 text-blue-600 mr-3" />
+              <div>
+                <p className="font-medium text-blue-900">Nuevo Huésped</p>
+                <p className="text-sm text-blue-600">Registrar</p>
+              </div>
+            </a>
+            
+            <a
+              href="/pickup"
+              className="flex items-center p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+            >
+              <Truck className="h-8 w-8 text-green-600 mr-3" />
+              <div>
+                <p className="font-medium text-green-900">Recojos</p>
+                <p className="text-sm text-green-600">Gestionar</p>
+              </div>
+            </a>
+            
+            <a
+              href="/inventory"
+              className="flex items-center p-4 bg-yellow-50 rounded-lg hover:bg-yellow-100 transition-colors"
+            >
+              <Package className="h-8 w-8 text-yellow-600 mr-3" />
+              <div>
+                <p className="font-medium text-yellow-900">Inventario</p>
+                <p className="text-sm text-yellow-600">Revisar</p>
+              </div>
+            </a>
+            
+            <a
+              href="/reports"
+              className="flex items-center p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+            >
+              <TrendingUp className="h-8 w-8 text-purple-600 mr-3" />
+              <div>
+                <p className="font-medium text-purple-900">Reportes</p>
+                <p className="text-sm text-purple-600">Ver</p>
+              </div>
+            </a>
+          </div>
+        </Card.Content>
+      </Card>
+    </div>
+  );
+};
+
+export default AdminDashboard;
