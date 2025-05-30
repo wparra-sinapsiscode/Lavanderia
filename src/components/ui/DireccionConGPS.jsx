@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNotifications } from '../../store/NotificationContext';
-import { MapPin, Search } from 'lucide-react';
+import { MapPin, Search, X } from 'lucide-react';
 import MapaSelector from './MapaSelector';
 
 /**
@@ -126,6 +126,13 @@ const DireccionConGPS = ({
       return;
     }
     
+    // Si el usuario modifica una dirección que ya estaba validada, 
+    // invalidarla para que deba validarse nuevamente
+    if (direccionValida && valor !== direccion) {
+      setDireccionValida(false);
+      setCoordenadas({ lat: null, lng: null });
+    }
+    
     // Esperar 500ms después del último keypress para buscar
     timeoutRef.current = setTimeout(() => {
       buscarSugerencias(valor);
@@ -244,36 +251,64 @@ const DireccionConGPS = ({
       
       <div className="flex flex-col space-y-2">
         <div className="flex">
-          <input
-            type="text"
-            value={direccion}
-            onChange={handleDireccionChange}
-            onBlur={() => {
-              // Dar tiempo para que se pueda hacer clic en una sugerencia
-              setTimeout(() => {
-                if (mostrarSugerencias) {
-                  setMostrarSugerencias(false);
+          <div className="relative w-full">
+            <input
+              type="text"
+              value={direccion}
+              onChange={handleDireccionChange}
+              onBlur={() => {
+                // Dar tiempo para que se pueda hacer clic en una sugerencia
+                setTimeout(() => {
+                  if (mostrarSugerencias) {
+                    setMostrarSugerencias(false);
+                  }
+                }, 200);
+              }}
+              onFocus={() => {
+                if (sugerencias.length > 0) {
+                  setMostrarSugerencias(true);
                 }
-              }, 200);
-            }}
-            onFocus={() => {
-              if (sugerencias.length > 0) {
-                setMostrarSugerencias(true);
-              }
-            }}
-            placeholder={placeholder}
-            className={`block w-full px-3 py-2 border ${
-              error ? 'border-red-500' : direccionValida ? 'border-green-500' : 'border-gray-300'
-            } rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
-          />
+              }}
+              placeholder={placeholder}
+              readOnly={direccionValida}
+              className={`block w-full px-3 py-2 border ${
+                error ? 'border-red-500' : direccionValida ? 'border-green-500' : 'border-gray-300'
+              } rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
+                direccionValida ? 'bg-gray-50' : ''
+              }`}
+            />
+            {direccionValida && (
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setDireccion('');
+                    setCoordenadas({ lat: null, lng: null });
+                    setDireccionValida(false);
+                    if (onChange) {
+                      onChange({
+                        direccion: '',
+                        coordenadas: { lat: null, lng: null }
+                      });
+                    }
+                  }}
+                  className="text-gray-400 hover:text-red-500 focus:outline-none"
+                  title="Borrar y empezar de nuevo"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         
         <div className="flex space-x-2">
           <button
             type="button"
             onClick={validarDireccion}
-            disabled={cargando || !direccion}
+            disabled={cargando || !direccion || direccionValida}
             className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            title={direccionValida ? "La dirección ya está validada" : "Validar esta dirección"}
           >
             <Search className="h-4 w-4 mr-2" />
             Validar dirección
@@ -322,9 +357,14 @@ const DireccionConGPS = ({
       {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
       
       {direccionValida && coordenadas.lat && coordenadas.lng && (
-        <p className="mt-1 text-sm text-green-600">
-          Coordenadas: {coordenadas.lat.toFixed(6)}, {coordenadas.lng.toFixed(6)}
-        </p>
+        <div className="mt-1">
+          <p className="text-sm text-green-600">
+            <span className="font-medium">✓ Dirección validada.</span> Coordenadas: {coordenadas.lat.toFixed(6)}, {coordenadas.lng.toFixed(6)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            (Si necesita cambiar la dirección, borre el texto completamente o use el selector de mapa)
+          </p>
+        </div>
       )}
     </div>
   );
