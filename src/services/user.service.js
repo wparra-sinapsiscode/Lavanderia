@@ -64,11 +64,18 @@ class UserService {
         userData.role = userData.role.toUpperCase();
       }
       
+      // Log de datos enviados para diagnóstico
+      console.log('Datos enviados al registrar usuario:', userData);
+      
       // Use the register endpoint from auth controller
       const response = await api.post('/auth/register', userData);
       return response.data;
     } catch (error) {
       console.error('Error creating user:', error);
+      // Mostrar detalles específicos del error
+      if (error.response && error.response.data) {
+        console.error('Detalles del error:', error.response.data);
+      }
       throw error;
     }
   }

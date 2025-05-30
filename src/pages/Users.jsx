@@ -68,9 +68,12 @@ const Users = () => {
         email: userData.email,
         password: userData.password,
         role: userData.role.toUpperCase(),
-        zone: userData.zone,
+        zone: userData.zone ? userData.zone.toUpperCase() : (userData.role === 'REPARTIDOR' ? null : 'ADMINISTRACION'),
         phone: userData.phone || null
       };
+      
+      // Log de datos enviados para diagnóstico
+      console.log('Datos enviados al registrar usuario:', apiUserData);
       
       const response = await userService.createUser(apiUserData);
       
@@ -87,6 +90,10 @@ const Users = () => {
       // Manejar errores comunes
       if (err.message && err.message.includes('duplicate key')) {
         error('Error', 'Ya existe un usuario con este email');
+      } else if (err.response && err.response.data && err.response.data.errors) {
+        // Mostrar errores de validación específicos
+        const validationErrors = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join('\n');
+        error('Error de validación', validationErrors);
       } else {
         error('Error', 'Error al crear el usuario: ' + (err.message || 'Error desconocido'));
       }
@@ -100,7 +107,7 @@ const Users = () => {
         name: userData.name,
         email: userData.email,
         role: userData.role.toUpperCase(),
-        zone: userData.zone,
+        zone: userData.zone ? userData.zone.toUpperCase() : (userData.role === 'REPARTIDOR' ? null : 'ADMINISTRACION'),
         phone: userData.phone || null
       };
       
@@ -108,6 +115,9 @@ const Users = () => {
       if (userData.password) {
         apiUserData.password = userData.password;
       }
+      
+      // Log de datos enviados para diagnóstico
+      console.log('Datos enviados al actualizar usuario:', apiUserData);
       
       const response = await userService.updateUser(userId, apiUserData);
       
@@ -120,7 +130,15 @@ const Users = () => {
       }
     } catch (err) {
       console.error('Error updating user:', err);
-      error('Error', 'Error al actualizar el usuario: ' + (err.message || 'Error desconocido'));
+      
+      // Manejar errores comunes
+      if (err.response && err.response.data && err.response.data.errors) {
+        // Mostrar errores de validación específicos
+        const validationErrors = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join('\n');
+        error('Error de validación', validationErrors);
+      } else {
+        error('Error', 'Error al actualizar el usuario: ' + (err.message || 'Error desconocido'));
+      }
     }
   };
 
@@ -403,11 +421,48 @@ const UserForm = ({ user, onClose, onSubmit }) => {
     zone: user?.zone || '',
     phone: user?.phone || ''
   });
+  const [errors, setErrors] = useState({});
+
+  const validateForm = () => {
+    const newErrors = {};
+    
+    // Validate name (5-100 chars)
+    if (!formData.name || formData.name.length < 5 || formData.name.length > 100) {
+      newErrors.name = 'El nombre debe tener entre 5 y 100 caracteres';
+    }
+    
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      newErrors.email = 'El email no es válido';
+    }
+    
+    // Validate password (only for new users or password updates)
+    if (!user || formData.password) {
+      const passwordRegex = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[a-zA-Z]).{8,}$/;
+      if (!formData.password || !passwordRegex.test(formData.password)) {
+        newErrors.password = 'La contraseña debe tener al menos 8 caracteres e incluir mayúsculas, minúsculas y números';
+      }
+    }
+    
+    // Validate zone (required for REPARTIDOR role)
+    if (formData.role === 'REPARTIDOR' && !formData.zone) {
+      newErrors.zone = 'Debe seleccionar una zona para el repartidor';
+    }
+    
+    // Validate phone (must be 9 digits if provided)
+    if (formData.phone && !/^\d{9}$/.test(formData.phone)) {
+      newErrors.phone = 'El teléfono debe tener exactamente 9 dígitos';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.email || (!user && !formData.password)) {
+    if (!validateForm()) {
       return;
     }
 
@@ -428,28 +483,48 @@ const UserForm = ({ user, onClose, onSubmit }) => {
           </h3>
           
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Nombre Completo"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-            />
+            <div>
+              <Input
+                label="Nombre Completo"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+              />
+              {errors.name && (
+                <p className="mt-1 text-sm text-red-600">{errors.name}</p>
+              )}
+            </div>
             
-            <Input
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-            />
+            <div>
+              <Input
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
+              />
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+              )}
+            </div>
             
-            <Input
-              label={user ? "Nueva Contraseña (opcional)" : "Contraseña"}
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required={!user}
-            />
+            <div>
+              <Input
+                label={user ? "Nueva Contraseña (opcional)" : "Contraseña"}
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required={!user}
+              />
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+              )}
+              {!user && (
+                <p className="mt-1 text-xs text-gray-600">
+                  La contraseña debe tener al menos 8 caracteres e incluir mayúsculas, minúsculas y números.
+                </p>
+              )}
+            </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -473,22 +548,36 @@ const UserForm = ({ user, onClose, onSubmit }) => {
                 <select
                   value={formData.zone}
                   onChange={(e) => setFormData({ ...formData, zone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  className={`w-full px-3 py-2 border ${errors.zone ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
                   required
                 >
                   <option value="">Seleccionar zona...</option>
-                  {Object.values(ZONES).map((zone) => (
-                    <option key={zone} value={zone}>{zone}</option>
+                  {Object.keys(ZONES).map((zoneKey) => (
+                    <option key={zoneKey} value={zoneKey}>{ZONES[zoneKey]}</option>
                   ))}
                 </select>
+                {errors.zone && (
+                  <p className="mt-1 text-sm text-red-600">{errors.zone}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-600">
+                  Es obligatorio seleccionar una zona para repartidores.
+                </p>
               </div>
             )}
             
-            <Input
-              label="Teléfono"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            />
+            <div>
+              <Input
+                label="Teléfono"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+              {errors.phone && (
+                <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-600">
+                Si se proporciona, debe tener exactamente 9 dígitos.
+              </p>
+            </div>
             
             <div className="flex space-x-4 pt-4">
               <Button type="submit" className="flex-1">
