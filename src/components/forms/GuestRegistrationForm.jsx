@@ -26,6 +26,7 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       hotelId: '',
       repartidorId: '',
       bagCount: 1,
+      roomNumber: '', // Nuevo campo para número de habitación
       observations: '',
       priority: 'auto'
     }
@@ -172,12 +173,12 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       // Preparar datos del servicio
       const serviceData = {
         guestName: data.guestName,
-        roomNumber: 'N/A', // Recogida en hotel, sin habitación específica
+        roomNumber: data.roomNumber || 'N/A', // Ahora usamos el valor ingresado
         hotelId: String(selectedHotel.id).trim(),
         bagCount: parseInt(data.bagCount),
         observations: data.observations || '',
-        // Asegurar que la prioridad esté en mayúsculas para el backend
-        priority: finalPriority.toUpperCase(),
+        // Enviar la prioridad tal como está (ya está en mayúsculas)
+        priority: finalPriority,
         estimatedPickupDate: estimatedPickupDate.toISOString(),
         repartidorId: String(assignedRepartidor.id).trim(),
         pickupTimeSlot: '9:00 - 11:00', // Horario fijo para evitar datos aleatorios
@@ -207,10 +208,11 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       
       // Mostrar notificación de éxito
       const repartidorInfo = `Asignado a ${assignedRepartidor.name} (Zona ${assignedRepartidor.zone}).`;
+      const roomInfo = data.roomNumber ? `Habitación: ${data.roomNumber}.` : '';
       
       showNotification({
         type: 'success',
-        message: `Orden para ${data.guestName} creada exitosamente. ${data.bagCount} bolsas para recoger. ${repartidorInfo}`
+        message: `Orden para ${data.guestName} creada exitosamente. ${roomInfo} ${data.bagCount} bolsas para recoger. ${repartidorInfo}`
       });
 
       if (onServiceCreated) {
@@ -277,6 +279,17 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
             })}
             error={errors.guestName?.message}
             placeholder="Se autocompletará con el contacto del hotel"
+            required
+          />
+          
+          {/* Room Number */}
+          <Input
+            label="Número de Habitación"
+            {...register('roomNumber', {
+              required: 'El número de habitación es requerido'
+            })}
+            error={errors.roomNumber?.message}
+            placeholder="Ej: 101, Suite 3, etc."
             required
           />
 
@@ -364,9 +377,9 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             >
               <option value="auto">Automática (basada en observaciones)</option>
-              <option value="high">🔴 Alta - Urgente</option>
-              <option value="medium">🟡 Media - Normal</option>
-              <option value="low">🟢 Baja - Sin prisa</option>
+              <option value="ALTA">🔴 Alta - Urgente</option>
+              <option value="MEDIA">🟡 Media - Normal</option>
+              <option value="NORMAL">🟢 Normal - Sin prisa</option>
             </select>
             {errors.priority && (
               <p className="text-sm text-red-600 mt-1">{errors.priority.message}</p>

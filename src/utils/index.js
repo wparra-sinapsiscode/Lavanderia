@@ -169,7 +169,7 @@ export const assignRepartidorByZone = (hotel, users) => {
 
 // Get automatic priority based on observations
 export const getAutomaticPriority = (observations) => {
-  if (!observations) return 'normal';
+  if (!observations) return 'NORMAL';
   
   const urgentKeywords = [
     'urgente', 'evento', 'prisa', 'importante', 'vip', 'emergencia', 
@@ -185,14 +185,14 @@ export const getAutomaticPriority = (observations) => {
   const lowerObs = observations.toLowerCase();
   
   if (urgentKeywords.some(keyword => lowerObs.includes(keyword))) {
-    return 'alta';
+    return 'ALTA';
   }
   
   if (highKeywords.some(keyword => lowerObs.includes(keyword))) {
-    return 'media';
+    return 'MEDIA';
   }
   
-  return 'normal';
+  return 'NORMAL';
 };
 
 // Service type functions for mixed routes

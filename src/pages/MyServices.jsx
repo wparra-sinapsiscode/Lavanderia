@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
-import { useNotifications } from '../store/NotificationContext';
+import { useNotification } from '../store/NotificationContext';
 import serviceService from '../services/service.service';
-import { formatCurrency, formatDate, getStatusColor, getStatusText, getServiceTypeColor, getServiceTypeText } from '../utils';
-import { SERVICE_STATUS } from '../types';
+import hotelService from '../services/hotel.service';
 import Layout from '../components/shared/Layout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import HotelServiceForm from '../components/forms/HotelServiceForm';
 import { 
   Package, 
   FileText, 
@@ -23,33 +23,60 @@ import {
 
 const MyServices = () => {
   const { user } = useAuth();
-  const { showNotification } = useNotifications();
+  const { showNotification } = useNotification();
   const navigate = useNavigate();
   
+  const [loading, setLoading] = useState(true);
   const [services, setServices] = useState([]);
   const [filteredServices, setFilteredServices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [hotels, setHotels] = useState([]);
+  const [showHotelServiceForm, setShowHotelServiceForm] = useState(false);
+  
+  const [filters, setFilters] = useState({
+    status: '',
+    hotelId: '',
+    isHotelService: '',
+    searchTerm: ''
+  });
+  
   const [sortConfig, setSortConfig] = useState({
-    key: 'timestamp',
+    key: 'createdAt',
     direction: 'desc'
   });
   
-  // Fetch services on component mount
+  // Status options for filtering
+  const statusOptions = [
+    { value: '', label: 'Todos los estados' },
+    { value: 'PENDING_PICKUP', label: 'Pendiente de recogida' },
+    { value: 'PICKED_UP', label: 'Recogido' },
+    { value: 'LABELED', label: 'Rotulado' },
+    { value: 'IN_PROCESS', label: 'En proceso' },
+    { value: 'READY_FOR_DELIVERY', label: 'Listo para entrega' },
+    { value: 'PARTIAL_DELIVERY', label: 'Entrega parcial' },
+    { value: 'COMPLETED', label: 'Completado' },
+    { value: 'CANCELLED', label: 'Cancelado' }
+  ];
+  
+  const serviceTypeOptions = [
+    { value: '', label: 'Todos los tipos' },
+    { value: 'true', label: 'Servicios de hotel' },
+    { value: 'false', label: 'Servicios de huésped' }
+  ];
+  
   useEffect(() => {
     loadServices();
+    loadHotels();
   }, []);
   
-  // Apply filters when services, statusFilter, or searchTerm changes
   useEffect(() => {
     applyFilters();
-  }, [services, statusFilter, searchTerm]);
+  }, [services, filters, sortConfig]);
   
   const loadServices = async () => {
     setLoading(true);
     try {
       const response = await serviceService.getMyServices();
+      
       if (response.success && response.data) {
         setServices(response.data);
         setFilteredServices(response.data);
@@ -57,10 +84,10 @@ const MyServices = () => {
         throw new Error(response.message || 'Error al cargar servicios');
       }
     } catch (error) {
-      console.error('Error loading services:', error);
+      console.error('Error al cargar servicios:', error);
       showNotification({
         type: 'error',
-        message: 'Error al cargar servicios: ' + (error.message || 'Error desconocido')
+        message: `Error al cargar servicios: ${error.message}`
       });
       setServices([]);
       setFilteredServices([]);
@@ -69,36 +96,85 @@ const MyServices = () => {
     }
   };
   
+  const loadHotels = async () => {
+    try {
+      const response = await hotelService.getAllHotels();
+      if (response.success && response.data) {
+        setHotels(response.data);
+      }
+    } catch (error) {
+      console.error('Error al cargar hoteles:', error);
+      setHotels([]);
+    }
+  };
+  
   const applyFilters = () => {
     let result = [...services];
     
     // Apply status filter
-    if (statusFilter) {
-      result = result.filter(service => service.status === statusFilter);
+    if (filters.status) {
+      result = result.filter(service => service.status === filters.status);
+    }
+    
+    // Apply hotel filter
+    if (filters.hotelId) {
+      result = result.filter(service => service.hotelId === filters.hotelId);
+    }
+    
+    // Apply service type filter
+    if (filters.isHotelService) {
+      const isHotelService = filters.isHotelService === 'true';
+      result = result.filter(service => service.isHotelService === isHotelService);
     }
     
     // Apply search term
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
+    if (filters.searchTerm) {
+      const searchLower = filters.searchTerm.toLowerCase();
       result = result.filter(service => 
         (service.guestName && service.guestName.toLowerCase().includes(searchLower)) ||
-        (service.hotel && service.hotel.toLowerCase().includes(searchLower)) ||
+        (service.hotel?.name && service.hotel.name.toLowerCase().includes(searchLower)) ||
         (service.roomNumber && service.roomNumber.toString().includes(searchLower))
       );
     }
     
     // Apply sorting
     result.sort((a, b) => {
-      if (a[sortConfig.key] < b[sortConfig.key]) {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+      
+      // Handle nested properties
+      if (sortConfig.key === 'hotel.name') {
+        aValue = a.hotel?.name || '';
+        bValue = b.hotel?.name || '';
+      }
+      
+      if (aValue < bValue) {
         return sortConfig.direction === 'asc' ? -1 : 1;
       }
-      if (a[sortConfig.key] > b[sortConfig.key]) {
+      if (aValue > bValue) {
         return sortConfig.direction === 'asc' ? 1 : -1;
       }
       return 0;
     });
     
     setFilteredServices(result);
+  };
+  
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+  
+  const resetFilters = () => {
+    setFilters({
+      status: '',
+      hotelId: '',
+      isHotelService: '',
+      searchTerm: ''
+    });
   };
   
   const handleSort = (key) => {
@@ -111,343 +187,460 @@ const MyServices = () => {
   
   const renderSortArrow = (key) => {
     if (sortConfig.key !== key) return null;
-    return sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />;
+    return sortConfig.direction === 'asc' ? 
+      <ArrowUp className="h-4 w-4" /> : 
+      <ArrowDown className="h-4 w-4" />;
   };
   
-  const navigateToService = (serviceId) => {
-    // Navigate to service detail page
-    navigate(`/services/${serviceId}`);
+  const getStatusBadgeClass = (status) => {
+    const statusInfo = serviceService.getStatusInfo(status);
+    
+    const colorClasses = {
+      'blue': 'bg-blue-100 text-blue-800',
+      'purple': 'bg-purple-100 text-purple-800',
+      'indigo': 'bg-indigo-100 text-indigo-800',
+      'orange': 'bg-orange-100 text-orange-800',
+      'teal': 'bg-teal-100 text-teal-800',
+      'green': 'bg-green-100 text-green-800',
+      'red': 'bg-red-100 text-red-800',
+      'gray': 'bg-gray-100 text-gray-800'
+    };
+    
+    return `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClasses[statusInfo.color] || 'bg-gray-100 text-gray-800'}`;
   };
   
-  const navigateToAction = (serviceId, status) => {
-    // Navigate to appropriate action page based on service status
-    switch(status) {
-      case SERVICE_STATUS.PENDING_PICKUP:
-        navigate(`/pickup?serviceId=${serviceId}`);
-        break;
-      case SERVICE_STATUS.IN_PROCESS:
-      case SERVICE_STATUS.READY_FOR_DELIVERY:
-      case SERVICE_STATUS.LABELED:
-        navigate(`/delivery?serviceId=${serviceId}`);
-        break;
-      default:
-        navigate(`/services/${serviceId}`);
+  const getPriorityBadgeClass = (priority) => {
+    const priorityInfo = serviceService.getPriorityInfo(priority);
+    
+    const colorClasses = {
+      'red': 'bg-red-100 text-red-800',
+      'orange': 'bg-orange-100 text-orange-800',
+      'blue': 'bg-blue-100 text-blue-800'
+    };
+    
+    return `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClasses[priorityInfo.color] || 'bg-gray-100 text-gray-800'}`;
+  };
+  
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
+  
+  const handleServiceClick = (serviceId) => {
+    navigate(`/servicios/${serviceId}`);
+  };
+  
+  // Stats summary for dashboard view
+  const renderStatsSummary = () => {
+    const totalServices = services.length;
+    const pendingServices = services.filter(s => 
+      s.status === 'PENDING_PICKUP' || 
+      s.status === 'PICKED_UP' || 
+      s.status === 'LABELED' || 
+      s.status === 'IN_PROCESS'
+    ).length;
+    const completedServices = services.filter(s => s.status === 'COMPLETED').length;
+    
+    // Count today's services
+    const today = new Date().toDateString();
+    const todayServices = services.filter(s => {
+      const serviceDate = new Date(s.createdAt).toDateString();
+      return serviceDate === today;
+    }).length;
+    
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Package className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Total</p>
+                <p className="text-xl font-bold">{totalServices}</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+        
+        <Card>
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Clock className="h-5 w-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Pendientes</p>
+                <p className="text-xl font-bold">{pendingServices}</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+        
+        <Card>
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Completados</p>
+                <p className="text-xl font-bold">{completedServices}</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+        
+        <Card>
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <Truck className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Hoy</p>
+                <p className="text-xl font-bold">{todayServices}</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+  
+  // Services table content
+  const renderServices = () => {
+    if (loading) {
+      return (
+        <div className="flex justify-center py-10">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div>
+        </div>
+      );
     }
+    
+    if (filteredServices.length === 0) {
+      return (
+        <div className="flex flex-col items-center py-10">
+          <Package className="h-16 w-16 text-gray-300 mb-4" />
+          <p className="text-gray-500 mb-4">No hay servicios que mostrar</p>
+          {(filters.status || filters.hotelId || filters.isHotelService || filters.searchTerm) && (
+            <Button 
+              variant="outline" 
+              onClick={resetFilters}
+              className="flex items-center gap-2"
+            >
+              <X className="h-4 w-4" />
+              Quitar filtros
+            </Button>
+          )}
+          {(user.role === 'ADMIN' || user.role === 'RECEPCION') && (
+            <div className="mt-4 space-x-2">
+              <Button 
+                variant="primary" 
+                onClick={() => navigate('/servicios/nuevo')}
+              >
+                Crear Servicio de Huésped
+              </Button>
+              <Button 
+                variant="secondary" 
+                onClick={() => setShowHotelServiceForm(true)}
+              >
+                Crear Servicio de Hotel
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                onClick={() => handleSort('guestName')}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Cliente</span>
+                  {renderSortArrow('guestName')}
+                </div>
+              </th>
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                onClick={() => handleSort('hotel.name')}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Hotel</span>
+                  {renderSortArrow('hotel.name')}
+                </div>
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Habitación
+              </th>
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                onClick={() => handleSort('bagCount')}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Bolsas</span>
+                  {renderSortArrow('bagCount')}
+                </div>
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Prioridad
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Estado
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Repartidor
+              </th>
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                onClick={() => handleSort('createdAt')}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Fecha</span>
+                  {renderSortArrow('createdAt')}
+                </div>
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Tipo
+              </th>
+              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Acciones
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {filteredServices.map(service => (
+              <tr 
+                key={service.id} 
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => handleServiceClick(service.id)}
+              >
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{service.guestName}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{service.hotel?.name || 'N/A'}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{service.roomNumber}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{service.bagCount}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={getPriorityBadgeClass(service.priority)}>
+                    {serviceService.getPriorityInfo(service.priority).label}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={getStatusBadgeClass(service.status)}>
+                    {serviceService.getStatusInfo(service.status).label}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">
+                    {service.repartidor?.name || 'Sin asignar'}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">
+                    {formatDate(service.createdAt)}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">
+                    {service.isHotelService ? 'Hotel' : 'Huésped'}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleServiceClick(service.id);
+                    }}
+                  >
+                    <FileText className="h-4 w-4 mr-1" />
+                    Detalles
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   };
   
-  // Get appropriate action button based on service status
-  const getActionButton = (service) => {
-    switch(service.status) {
-      case SERVICE_STATUS.PENDING_PICKUP:
-        return (
-          <Button 
-            size="sm" 
-            onClick={() => navigateToAction(service.id, service.status)}
-            className="flex items-center gap-1"
-          >
-            <Truck className="h-4 w-4" />
-            <span>Recoger</span>
-          </Button>
-        );
-      
-      case SERVICE_STATUS.PICKED_UP:
-      case SERVICE_STATUS.LABELED:
-        return (
-          <Button 
-            size="sm" 
-            variant="secondary"
-            onClick={() => navigateToService(service.id)}
-            className="flex items-center gap-1"
-          >
-            <FileText className="h-4 w-4" />
-            <span>Detalles</span>
-          </Button>
-        );
-      
-      case SERVICE_STATUS.IN_PROCESS:
-      case SERVICE_STATUS.READY_FOR_DELIVERY:
-        return (
-          <Button 
-            size="sm" 
-            onClick={() => navigateToAction(service.id, service.status)}
-            className="flex items-center gap-1"
-          >
-            <Package className="h-4 w-4" />
-            <span>Entregar</span>
-          </Button>
-        );
-      
-      case SERVICE_STATUS.PARTIAL_DELIVERY:
-        return (
-          <Button 
-            size="sm" 
-            variant="accent"
-            onClick={() => navigateToAction(service.id, service.status)}
-            className="flex items-center gap-1"
-          >
-            <Package className="h-4 w-4" />
-            <span>Completar</span>
-          </Button>
-        );
-      
-      case SERVICE_STATUS.COMPLETED:
-        return (
-          <Button 
-            size="sm" 
-            variant="success"
-            onClick={() => navigateToService(service.id)}
-            className="flex items-center gap-1"
-          >
-            <CheckCircle className="h-4 w-4" />
-            <span>Completado</span>
-          </Button>
-        );
-      
-      default:
-        return (
-          <Button 
-            size="sm" 
-            variant="secondary"
-            onClick={() => navigateToService(service.id)}
-            className="flex items-center gap-1"
-          >
-            <FileText className="h-4 w-4" />
-            <span>Detalles</span>
-          </Button>
-        );
-    }
-  };
+  if (showHotelServiceForm) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-6">
+          <div className="mb-4 flex items-center">
+            <Button 
+              variant="secondary" 
+              className="mr-2"
+              onClick={() => setShowHotelServiceForm(false)}
+            >
+              Volver
+            </Button>
+            <h1 className="text-2xl font-bold">Crear Servicio de Hotel</h1>
+          </div>
+          <HotelServiceForm />
+        </div>
+      </Layout>
+    );
+  }
   
   return (
     <Layout>
-      <div className="container mx-auto py-6 px-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4 md:mb-0">
-            Mis Servicios
-          </h1>
-          
-          <div className="flex flex-col md:flex-row gap-3">
-            {/* Search input */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-            </div>
-            
-            {/* Filter dropdown */}
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none"
+      <div className="container mx-auto px-4 py-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Mis Servicios</h1>
+          {(user.role === 'ADMIN' || user.role === 'RECEPCION') && (
+            <div className="space-x-2">
+              <Button 
+                variant="primary" 
+                onClick={() => navigate('/servicios/nuevo')}
               >
-                <option value="">Todos los estados</option>
-                <option value={SERVICE_STATUS.PENDING_PICKUP}>Pendiente Recojo</option>
-                <option value={SERVICE_STATUS.PICKED_UP}>Recogido</option>
-                <option value={SERVICE_STATUS.LABELED}>Rotulado</option>
-                <option value={SERVICE_STATUS.IN_PROCESS}>En Proceso</option>
-                <option value={SERVICE_STATUS.PARTIAL_DELIVERY}>Entrega Parcial</option>
-                <option value={SERVICE_STATUS.COMPLETED}>Completado</option>
-              </select>
-              <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                Crear Servicio de Huésped
+              </Button>
+              <Button 
+                variant="secondary" 
+                onClick={() => setShowHotelServiceForm(true)}
+              >
+                Crear Servicio de Hotel
+              </Button>
             </div>
-            
-            {/* Refresh button */}
-            <Button
-              variant="outline"
-              onClick={loadServices}
-              disabled={loading}
-            >
-              Actualizar
-            </Button>
-          </div>
+          )}
         </div>
         
         {/* Stats summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card>
-            <Card.Content className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Package className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total</p>
-                  <p className="text-xl font-bold">{services.length}</p>
-                </div>
-              </div>
-            </Card.Content>
-          </Card>
-          
-          <Card>
-            <Card.Content className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <Clock className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Pendientes</p>
-                  <p className="text-xl font-bold">
-                    {services.filter(s => 
-                      s.status === SERVICE_STATUS.PENDING_PICKUP || 
-                      s.status === SERVICE_STATUS.PICKED_UP || 
-                      s.status === SERVICE_STATUS.LABELED || 
-                      s.status === SERVICE_STATUS.IN_PROCESS).length}
-                  </p>
-                </div>
-              </div>
-            </Card.Content>
-          </Card>
-          
-          <Card>
-            <Card.Content className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Completados</p>
-                  <p className="text-xl font-bold">
-                    {services.filter(s => s.status === SERVICE_STATUS.COMPLETED).length}
-                  </p>
-                </div>
-              </div>
-            </Card.Content>
-          </Card>
-          
-          <Card>
-            <Card.Content className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-100 rounded-lg">
-                  <Truck className="h-5 w-5 text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Hoy</p>
-                  <p className="text-xl font-bold">
-                    {services.filter(s => {
-                      const today = new Date().toDateString();
-                      const serviceDate = new Date(s.timestamp).toDateString();
-                      return serviceDate === today;
-                    }).length}
-                  </p>
-                </div>
-              </div>
-            </Card.Content>
-          </Card>
-        </div>
+        {renderStatsSummary()}
         
-        {/* Services table */}
-        <Card>
-          <Card.Content className="p-0">
-            {loading ? (
-              <div className="flex justify-center items-center py-20">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div>
+        <Card title="Filtros">
+          <form onSubmit={(e) => { e.preventDefault(); applyFilters(); }} className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Search input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Buscar
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="searchTerm"
+                    placeholder="Buscar por nombre, hotel..."
+                    value={filters.searchTerm}
+                    onChange={handleFilterChange}
+                    className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                </div>
               </div>
-            ) : filteredServices.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <Package className="h-16 w-16 text-gray-300 mb-4" />
-                <p className="text-gray-500 text-lg mb-2">No hay servicios</p>
-                <p className="text-gray-400 text-sm mb-6">
-                  {statusFilter ? 'No hay servicios con el filtro seleccionado' : 'No tienes servicios asignados'}
-                </p>
-                {statusFilter && (
-                  <Button variant="outline" onClick={() => setStatusFilter('')}>
-                    <X className="h-4 w-4 mr-2" />
-                    Quitar filtro
-                  </Button>
-                )}
+              
+              {/* Status filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Estado
+                </label>
+                <select
+                  name="status"
+                  value={filters.status}
+                  onChange={handleFilterChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {statusOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th 
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('guestName')}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Huésped</span>
-                          {renderSortArrow('guestName')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('hotel')}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Hotel</span>
-                          {renderSortArrow('hotel')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('timestamp')}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Fecha</span>
-                          {renderSortArrow('timestamp')}
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        Estado
-                      </th>
-                      <th 
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                        onClick={() => handleSort('price')}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>Monto</span>
-                          {renderSortArrow('price')}
-                        </div>
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Acción
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredServices.map(service => (
-                      <tr 
-                        key={service.id} 
-                        className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => navigateToService(service.id)}
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{service.guestName}</div>
-                          <div className="text-sm text-gray-500">Hab. {service.roomNumber}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{service.hotel}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{formatDate(service.timestamp)}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(service.status)}`}>
-                            {getStatusText(service.status)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          {formatCurrency(service.price)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                          {getActionButton(service)}
-                        </td>
-                      </tr>
+              
+              {/* Hotel filter */}
+              {(user.role === 'ADMIN' || user.role === 'RECEPCION') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Hotel
+                  </label>
+                  <select
+                    name="hotelId"
+                    value={filters.hotelId}
+                    onChange={handleFilterChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Todos los hoteles</option>
+                    {hotels.map(hotel => (
+                      <option key={hotel.id} value={hotel.id}>
+                        {hotel.name}
+                      </option>
                     ))}
-                  </tbody>
-                </table>
+                  </select>
+                </div>
+              )}
+              
+              {/* Service type filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipo de Servicio
+                </label>
+                <select
+                  name="isHotelService"
+                  value={filters.isHotelService}
+                  onChange={handleFilterChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {serviceTypeOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-          </Card.Content>
+            </div>
+            
+            <div className="mt-4 flex justify-end space-x-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={resetFilters}
+              >
+                Restablecer
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={loadServices}
+              >
+                Actualizar
+              </Button>
+            </div>
+          </form>
+        </Card>
+        
+        <Card title="Lista de Servicios" className="mt-6">
+          {renderServices()}
         </Card>
       </div>
     </Layout>

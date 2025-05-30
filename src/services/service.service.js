@@ -24,51 +24,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Get services error:', error);
-      
-      // Fallback to local storage
-      try {
-        let services = serviceStorage.getServices() || [];
-        
-        // Apply filters
-        if (filters.status) {
-          services = services.filter(s => s.status === filters.status);
-        }
-        
-        if (filters.hotelId) {
-          services = services.filter(s => s.hotelId === filters.hotelId);
-        }
-        
-        if (filters.zone) {
-          services = services.filter(s => s.zone === filters.zone);
-        }
-        
-        if (filters.priority) {
-          services = services.filter(s => s.priority === filters.priority);
-        }
-        
-        // Sort by most recent first
-        services.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        
-        // Apply pagination if requested
-        let paginatedServices = services;
-        if (filters.limit) {
-          const offset = filters.offset || 0;
-          paginatedServices = services.slice(offset, offset + filters.limit);
-        }
-        
-        return {
-          success: true,
-          message: 'Services retrieved from local storage',
-          data: paginatedServices,
-          meta: {
-            total: services.length,
-            filtered: paginatedServices.length
-          }
-        };
-      } catch (localError) {
-        console.error('Local storage get services error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al obtener servicios',
+        error
+      };
     }
   }
   
@@ -83,25 +43,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Get service error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const service = services.find(s => s.id === id);
-        
-        if (!service) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Service retrieved from local storage',
-          data: service
-        };
-      } catch (localError) {
-        console.error('Local storage get service error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al obtener servicio',
+        error
+      };
     }
   }
   
@@ -116,31 +62,37 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Create service error:', error);
-      
-      // Fallback to local storage
-      try {
-        const newService = {
-          ...serviceData,
-          id: Date.now().toString(),
-          timestamp: new Date().toISOString(),
-          status: SERVICE_STATUS.PENDING_PICKUP
-        };
-        
-        const result = serviceStorage.addService(newService);
-        
-        if (!result) {
-          throw new Error('Failed to add service to local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Service created in local storage',
-          data: newService
-        };
-      } catch (localError) {
-        console.error('Local storage create service error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al crear servicio',
+        error
+      };
+    }
+  }
+  
+  /**
+   * Create a hotel service without specific guest information
+   * @param {Object} serviceData - Service data
+   * @param {string} serviceData.hotelId - Hotel ID
+   * @param {string} serviceData.repartidorId - Repartidor ID (optional)
+   * @param {number} serviceData.bagCount - Number of bags
+   * @param {string} serviceData.priority - Priority (ALTA, NORMAL, BAJA)
+   * @param {string} serviceData.specialInstructions - Special instructions
+   * @param {boolean} serviceData.isHotelService - Flag indicating this is a hotel service
+   * @returns {Promise<Object>} Created service
+   */
+  async createHotelService(serviceData) {
+    try {
+      // Endpoint específico para servicios de hotel sin huésped
+      const response = await api.post('/services/hotel', serviceData);
+      return response.data;
+    } catch (error) {
+      console.error('Create hotel service error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al crear servicio para hotel',
+        error
+      };
     }
   }
   
@@ -156,39 +108,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Register pickup error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const serviceIndex = services.findIndex(s => s.id === id);
-        
-        if (serviceIndex === -1) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        const updatedService = {
-          ...services[serviceIndex],
-          ...pickupData,
-          status: SERVICE_STATUS.PICKED_UP,
-          pickupDate: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        const result = serviceStorage.updateService(id, updatedService);
-        
-        if (!result) {
-          throw new Error('Failed to update service in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Pickup registered in local storage',
-          data: updatedService
-        };
-      } catch (localError) {
-        console.error('Local storage register pickup error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al registrar recogida',
+        error
+      };
     }
   }
   
@@ -211,46 +135,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Calculate price error:', error);
-      
-      // Simple fallback calculation - basic algorithm for local use
-      try {
-        // Default values
-        const baseRate = 5.0; // Base rate per kg
-        const urgentFee = 1.5; // 50% extra for urgent
-        const stainsFee = 1.2; // 20% extra for stains
-        
-        // Calculate basic price
-        let price = weight * baseRate;
-        
-        // Apply modifiers
-        if (options.isUrgent) {
-          price *= urgentFee;
-        }
-        
-        if (options.hasStains) {
-          price *= stainsFee;
-        }
-        
-        // Round to 2 decimal places
-        price = Math.round(price * 100) / 100;
-        
-        return {
-          success: true,
-          message: 'Price calculated locally (simplified)',
-          data: {
-            price,
-            breakdown: {
-              basePrice: weight * baseRate,
-              urgentFee: options.isUrgent ? `${(urgentFee - 1) * 100}%` : '0%',
-              stainsFee: options.hasStains ? `${(stainsFee - 1) * 100}%` : '0%',
-              weight
-            }
-          }
-        };
-      } catch (localError) {
-        console.error('Local storage calculate price error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al calcular precio',
+        error
+      };
     }
   }
   
@@ -268,43 +157,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Update service status error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const serviceIndex = services.findIndex(s => s.id === id);
-        
-        if (serviceIndex === -1) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        // Validate status is allowed
-        const validStatuses = Object.values(SERVICE_STATUS);
-        if (statusData.status && !validStatuses.includes(statusData.status)) {
-          throw new Error(`Invalid status: ${statusData.status}`);
-        }
-        
-        const updatedService = {
-          ...services[serviceIndex],
-          ...statusData,
-          updatedAt: new Date().toISOString()
-        };
-        
-        const result = serviceStorage.updateService(id, updatedService);
-        
-        if (!result) {
-          throw new Error('Failed to update service status in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Service status updated in local storage',
-          data: updatedService
-        };
-      } catch (localError) {
-        console.error('Local storage update service status error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al actualizar estado del servicio',
+        error
+      };
     }
   }
   
@@ -323,45 +180,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Register partial delivery error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const serviceIndex = services.findIndex(s => s.id === id);
-        
-        if (serviceIndex === -1) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        // Validate delivery percentage
-        if (!deliveryData.percentage || deliveryData.percentage <= 0 || deliveryData.percentage > 100) {
-          throw new Error('Invalid delivery percentage');
-        }
-        
-        const updatedService = {
-          ...services[serviceIndex],
-          ...deliveryData,
-          status: SERVICE_STATUS.PARTIAL_DELIVERY,
-          partialDeliveryPercentage: deliveryData.percentage,
-          partialDeliveryDate: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        const result = serviceStorage.updateService(id, updatedService);
-        
-        if (!result) {
-          throw new Error('Failed to register partial delivery in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Partial delivery registered in local storage',
-          data: updatedService
-        };
-      } catch (localError) {
-        console.error('Local storage register partial delivery error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al registrar entrega parcial',
+        error
+      };
     }
   }
   
@@ -389,56 +212,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Upload service photos error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const serviceIndex = services.findIndex(s => s.id === id);
-        
-        if (serviceIndex === -1) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        // Process photo files to base64 strings for local storage
-        const photoPromises = Array.from(photos).map(photo => {
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(photo);
-          });
-        });
-        
-        const photoBase64Array = await Promise.all(photoPromises);
-        
-        // Update service with photos
-        const service = services[serviceIndex];
-        const updatedPhotos = service.photos || {};
-        updatedPhotos[type] = [...(updatedPhotos[type] || []), ...photoBase64Array];
-        
-        const updatedService = {
-          ...service,
-          photos: updatedPhotos,
-          updatedAt: new Date().toISOString()
-        };
-        
-        const result = serviceStorage.updateService(id, updatedService);
-        
-        if (!result) {
-          throw new Error('Failed to upload photos in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Photos uploaded to local storage',
-          data: {
-            photoUrls: photoBase64Array
-          }
-        };
-      } catch (localError) {
-        console.error('Local storage upload photos error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al subir fotos',
+        error
+      };
     }
   }
   
@@ -463,52 +241,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Upload signature error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const serviceIndex = services.findIndex(s => s.id === id);
-        
-        if (serviceIndex === -1) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        // Convert signature blob to base64 for storage
-        const signatureBase64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(signatureBlob);
-        });
-        
-        // Update service with signature
-        const service = services[serviceIndex];
-        const updatedSignatures = service.signatures || {};
-        updatedSignatures[type] = signatureBase64;
-        
-        const updatedService = {
-          ...service,
-          signatures: updatedSignatures,
-          updatedAt: new Date().toISOString()
-        };
-        
-        const result = serviceStorage.updateService(id, updatedService);
-        
-        if (!result) {
-          throw new Error('Failed to upload signature in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Signature uploaded to local storage',
-          data: {
-            signatureUrl: signatureBase64
-          }
-        };
-      } catch (localError) {
-        console.error('Local storage upload signature error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al subir firma',
+        error
+      };
     }
   }
   
@@ -524,42 +261,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Get pending services error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        
-        // Filter pending services
-        let pendingServices = services.filter(s => 
-          s.status === SERVICE_STATUS.PENDING_PICKUP || 
-          s.status === SERVICE_STATUS.PICKED_UP
-        );
-        
-        // Apply zone filter if provided
-        if (filters.zone) {
-          pendingServices = pendingServices.filter(s => s.zone === filters.zone);
-        }
-        
-        // Sort by priority and creation date
-        pendingServices.sort((a, b) => {
-          // First sort by priority
-          const priorityOrder = { 'ALTA': 0, 'MEDIA': 1, 'NORMAL': 2 };
-          const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-          if (priorityDiff !== 0) return priorityDiff;
-          
-          // Then sort by creation date (oldest first)
-          return new Date(a.timestamp) - new Date(b.timestamp);
-        });
-        
-        return {
-          success: true,
-          message: 'Pending services retrieved from local storage',
-          data: pendingServices
-        };
-      } catch (localError) {
-        console.error('Local storage get pending services error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al obtener servicios pendientes',
+        error
+      };
     }
   }
   
@@ -575,39 +281,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Register delivery error:', error);
-      
-      // Fallback to local storage
-      try {
-        const services = serviceStorage.getServices() || [];
-        const serviceIndex = services.findIndex(s => s.id === id);
-        
-        if (serviceIndex === -1) {
-          throw new Error('Service not found in local storage');
-        }
-        
-        const updatedService = {
-          ...services[serviceIndex],
-          ...deliveryData,
-          status: SERVICE_STATUS.COMPLETED,
-          deliveryDate: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        const result = serviceStorage.updateService(id, updatedService);
-        
-        if (!result) {
-          throw new Error('Failed to register delivery in local storage');
-        }
-        
-        return {
-          success: true,
-          message: 'Delivery registered in local storage',
-          data: updatedService
-        };
-      } catch (localError) {
-        console.error('Local storage register delivery error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al registrar entrega',
+        error
+      };
     }
   }
   
@@ -623,38 +301,11 @@ class ServiceService {
       return response.data;
     } catch (error) {
       console.error('Get my services error:', error);
-      
-      // Fallback to local storage
-      try {
-        // Get current user from localStorage
-        const currentUser = JSON.parse(localStorage.getItem('fumy_limp_user'));
-        
-        if (!currentUser || !currentUser.id) {
-          throw new Error('User not logged in');
-        }
-        
-        const services = serviceStorage.getServices() || [];
-        
-        // Filter services assigned to current user
-        let myServices = services.filter(s => s.repartidorId === currentUser.id);
-        
-        // Apply status filter if provided
-        if (filters.status) {
-          myServices = myServices.filter(s => s.status === filters.status);
-        }
-        
-        // Sort by most recent first
-        myServices.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        
-        return {
-          success: true,
-          message: 'My services retrieved from local storage',
-          data: myServices
-        };
-      } catch (localError) {
-        console.error('Local storage get my services error:', localError);
-        throw error; // Throw original error
-      }
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al obtener mis servicios',
+        error
+      };
     }
   }
   
