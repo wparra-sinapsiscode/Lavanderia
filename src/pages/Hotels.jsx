@@ -8,6 +8,7 @@ import { SERVICE_STATUS } from '../types';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import DireccionConGPS from '../components/ui/DireccionConGPS';
 import hotelService from '../services/hotel.service';
 import { 
   Building, 
@@ -36,6 +37,8 @@ const Hotels = () => {
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
+  const [addressCoordinates, setAddressCoordinates] = useState({ lat: null, lng: null });
+  const [addressValid, setAddressValid] = useState(false);
   const [stats, setStats] = useState({
     totalHotels: 0,
     activeServices: 0,
@@ -47,6 +50,8 @@ const Hotels = () => {
     defaultValues: {
       name: '',
       address: '',
+      latitude: '',
+      longitude: '',
       contactPerson: '',
       phone: '',
       email: '',
@@ -140,6 +145,13 @@ const Hotels = () => {
   const onSubmit = async (data) => {
     try {
       setLoading(true);
+      
+      // Si tenemos coordenadas válidas del componente DireccionConGPS, las incluimos
+      if (addressCoordinates.lat && addressCoordinates.lng) {
+        data.latitude = addressCoordinates.lat;
+        data.longitude = addressCoordinates.lng;
+      }
+      
       const hotelData = {
         ...data,
         bagInventory: parseInt(data.bagInventory),
@@ -224,6 +236,8 @@ const Hotels = () => {
 
       setShowForm(false);
       reset();
+      setAddressCoordinates({ lat: null, lng: null });
+      setAddressValid(false);
       loadHotels();
     } catch (err) {
       console.error('Error saving hotel:', err);
@@ -244,6 +258,18 @@ const Hotels = () => {
     setValue('pricePerKg', hotel.pricePerKg);
     // Establecer la zona si existe, o usar SUR como valor predeterminado
     setValue('zone', hotel.zone || 'SUR');
+    
+    // Establecer coordenadas si existen
+    if (hotel.latitude && hotel.longitude) {
+      setAddressCoordinates({ lat: hotel.latitude, lng: hotel.longitude });
+      setAddressValid(true);
+      setValue('latitude', hotel.latitude);
+      setValue('longitude', hotel.longitude);
+    } else {
+      setAddressCoordinates({ lat: null, lng: null });
+      setAddressValid(false);
+    }
+    
     setShowForm(true);
   };
 
@@ -283,7 +309,23 @@ const Hotels = () => {
   const cancelForm = () => {
     setShowForm(false);
     setEditingHotel(null);
+    setAddressCoordinates({ lat: null, lng: null });
+    setAddressValid(false);
     reset();
+  };
+  
+  const handleAddressChange = (addressData) => {
+    setValue('address', addressData.direccion);
+    setAddressCoordinates(addressData.coordenadas);
+    
+    if (addressData.coordenadas.lat && addressData.coordenadas.lng) {
+      setValue('latitude', addressData.coordenadas.lat);
+      setValue('longitude', addressData.coordenadas.lng);
+    }
+  };
+  
+  const handleAddressValidChange = (isValid) => {
+    setAddressValid(isValid);
   };
 
 
@@ -317,6 +359,11 @@ const Hotels = () => {
                 <div className="mt-4">
                   <p className="text-sm font-medium text-gray-500">Dirección</p>
                   <p className="text-gray-900">{hotel.address}</p>
+                  {hotel.latitude && hotel.longitude && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Coordenadas GPS: {hotel.latitude.toFixed(6)}, {hotel.longitude.toFixed(6)}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -384,8 +431,11 @@ const Hotels = () => {
           <div>
             <h3 className="text-lg font-semibold text-gray-900">{hotel.name}</h3>
             <p className="text-gray-600 flex items-center mt-1">
-              <MapPin className="h-4 w-4 mr-1" />
+              <MapPin className={`h-4 w-4 mr-1 ${hotel.latitude && hotel.longitude ? 'text-green-500' : ''}`} />
               {hotel.address}
+              {hotel.latitude && hotel.longitude && (
+                <span className="ml-1 text-xs text-green-500">(GPS)</span>
+              )}
             </p>
           </div>
           <div className="flex space-x-2">
@@ -532,7 +582,15 @@ const Hotels = () => {
             </div>
           </Card.Header>
           <Card.Content>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={(e) => {
+              // Validar que la dirección haya sido geocodificada
+              if (!addressValid && !editingHotel) {
+                e.preventDefault();
+                error('Dirección inválida', 'Por favor seleccione o valide una dirección válida antes de continuar');
+                return;
+              }
+              handleSubmit(onSubmit)(e);
+            }} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-1">
                   <Input
@@ -576,15 +634,22 @@ const Hotels = () => {
                 </div>
 
                 <div className="md:col-span-2">
-                  <Input
+                  <DireccionConGPS
+                    initialValue={editingHotel?.address || ''}
+                    onChange={handleAddressChange}
+                    onValidChange={handleAddressValidChange}
+                    required={true}
                     label="Dirección"
-                    {...register('address', {
-                      required: 'La dirección es requerida'
-                    })}
-                    error={errors.address?.message}
                     placeholder="Ej: Malecón de la Reserva 555, Miraflores"
-                    required
                   />
+                  {!addressValid && (
+                    <p className="mt-1 text-sm text-amber-600">
+                      Por favor seleccione una dirección válida del listado de sugerencias o valide manualmente
+                    </p>
+                  )}
+                  <input type="hidden" {...register('address')} />
+                  <input type="hidden" {...register('latitude')} />
+                  <input type="hidden" {...register('longitude')} />
                 </div>
 
                 <Input
