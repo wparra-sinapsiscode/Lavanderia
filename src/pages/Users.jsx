@@ -154,13 +154,22 @@ const Users = () => {
         
         if (response.success) {
           loadUsers();
-          success('Usuario Eliminado', 'El usuario ha sido desactivado en el sistema');
+          if (response.deleteType === 'hard') {
+            success('Usuario Eliminado', 'El usuario ha sido eliminado permanentemente del sistema');
+          } else {
+            success('Usuario Desactivado', 'El usuario ha sido desactivado en el sistema');
+          }
         } else {
           error('Error', response.message || 'Error al eliminar el usuario');
         }
       } catch (err) {
         console.error('Error deleting user:', err);
-        error('Error', 'Error al eliminar el usuario: ' + (err.message || 'Error desconocido'));
+        if (err.response && err.response.status === 400) {
+          // Mostrar mensaje específico para servicios activos
+          error('Error', err.response.data?.message || 'No se puede eliminar el usuario porque tiene servicios activos asignados');
+        } else {
+          error('Error', 'Error al eliminar el usuario: ' + (err.message || 'Error desconocido'));
+        }
       }
     }
   };
