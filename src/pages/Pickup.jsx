@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { serviceStorage, hotelStorage, storage } from '../utils/storage';
-import { formatDate, getStatusColor, getStatusText, assignRepartidorByZone } from '../utils';
+import { formatDate, getStatusColor, getStatusText } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
-import { APP_CONFIG } from '../constants';
 import serviceService from '../services/service.service';
 import hotelService from '../services/hotel.service';
+import userService from '../services/user.service';
 import PickupForm from '../components/forms/PickupForm';
 import GuestRegistrationForm from '../components/forms/GuestRegistrationForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
@@ -51,84 +50,106 @@ const Pickup = () => {
 
   // Handle navigation from Routes page
   useEffect(() => {
-    if (location.state?.selectedServiceId) {
-      const services = serviceStorage.getServices();
-      const preSelectedService = services.find(s => s.id === location.state.selectedServiceId);
-      
-      if (preSelectedService) {
-        setSelectedService(preSelectedService);
-        showNotification({
-          type: 'success',
-          message: `Recojo para ${preSelectedService.guestName} en ${preSelectedService.hotel}`
-        });
+    async function loadSelectedService() {
+      if (location.state?.selectedServiceId) {
+        try {
+          // Cargar el servicio específico desde la API
+          const serviceResponse = await serviceService.getServiceById(location.state.selectedServiceId);
+          
+          if (serviceResponse.success && serviceResponse.data) {
+            const preSelectedService = serviceResponse.data;
+            setSelectedService(preSelectedService);
+            
+            // Determinar el nombre del hotel (puede venir como objeto o como nombre directo)
+            const hotelName = typeof preSelectedService.hotel === 'object' 
+              ? preSelectedService.hotel.name 
+              : preSelectedService.hotel;
+            
+            showNotification({
+              type: 'success',
+              message: `Recojo para ${preSelectedService.guestName} en ${hotelName}`
+            });
+          } else {
+            showNotification({
+              type: 'error',
+              message: 'No se pudo cargar el servicio seleccionado'
+            });
+          }
+        } catch (error) {
+          console.error('Error al cargar el servicio seleccionado:', error);
+          showNotification({
+            type: 'error',
+            message: 'Error al cargar el servicio seleccionado'
+          });
+        }
       }
     }
+    
+    loadSelectedService();
   }, [location.state]);
 
   const loadPickupData = async () => {
     try {
-      // Try to load services from API
+      // Cargar servicios desde la API
       let services = [];
       let pending = [];
       
-      try {
-        // First, try to fetch services from the API
-        if (isAdmin) {
-          // Admin can see all services
-          const servicesResponse = await serviceService.getAllServices();
-          if (servicesResponse.success && servicesResponse.data) {
-            services = servicesResponse.data;
-          }
-        } else if (isRepartidor) {
-          // Repartidor sees only their services
-          const myServicesResponse = await serviceService.getMyServices();
-          if (myServicesResponse.success && myServicesResponse.data) {
-            services = myServicesResponse.data;
-          }
+      if (isAdmin) {
+        // Admin puede ver todos los servicios
+        const servicesResponse = await serviceService.getAllServices();
+        if (servicesResponse.success && servicesResponse.data) {
+          services = servicesResponse.data;
+        } else {
+          throw new Error('No se pudieron obtener los servicios del administrador');
         }
-        
-        // Filter out cancelled services
-        pending = services.filter(s => s.status !== SERVICE_STATUS.CANCELLED);
-        
-      } catch (error) {
-        console.error('Error fetching services from API:', error);
-        // Fallback to local storage if API fails
-        services = serviceStorage.getServices();
-        
-        // Filter all services for tracking (all statuses except cancelled)
-        pending = services.filter(s => s.status !== SERVICE_STATUS.CANCELLED);
-        
-        // For repartidores, show only their zone or unassigned
-        if (isRepartidor) {
-          pending = pending.filter(s => !s.repartidorId || s.repartidorId === user.id);
+      } else if (isRepartidor) {
+        // Repartidor solo ve sus servicios asignados
+        const myServicesResponse = await serviceService.getMyServices();
+        if (myServicesResponse.success && myServicesResponse.data) {
+          services = myServicesResponse.data;
+        } else {
+          throw new Error('No se pudieron obtener los servicios del repartidor');
         }
       }
       
-      // Load repartidores for reassignment (will need a userService in the future)
-      const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-      const repartidoresList = allUsers.filter(u => u.role === 'repartidor');
-      setRepartidores(repartidoresList);
+      // Filtrar servicios cancelados
+      pending = services.filter(s => s.status !== SERVICE_STATUS.CANCELLED);
       
-      // Sort services by timestamp
+      // Cargar repartidores para reasignación desde la API
+      try {
+        const repartidoresResponse = await userService.getRepartidores({ active: true });
+        if (repartidoresResponse.success && repartidoresResponse.data) {
+          setRepartidores(repartidoresResponse.data);
+        } else {
+          throw new Error('No se pudieron obtener los repartidores');
+        }
+      } catch (repartidoresError) {
+        console.error('Error al cargar repartidores:', repartidoresError);
+        setRepartidores([]);
+      }
+      
+      // Ordenar servicios por fecha de creación (más reciente primero)
       setPendingServices(pending.sort((a, b) => 
-        new Date(a.timestamp) - new Date(b.timestamp)
+        new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp)
       ));
       
-      // Calculate stats
+      // Calcular estadísticas
       const pendingPickups = pending.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length;
       
-      // Total services - different logic for admin vs repartidor
+      // Total de servicios - lógica diferente para admin vs repartidor
       const myPickups = user.role === USER_ROLES.ADMIN 
-        ? services.length // Admin sees all services
+        ? services.length // Admin ve todos los servicios
         : services.filter(s => 
             s.repartidorId === user.id && 
             (s.status === SERVICE_STATUS.PENDING_PICKUP || s.status === SERVICE_STATUS.PICKED_UP)
-          ).length; // Repartidor sees only their pickup-related services
+          ).length; // Repartidor solo ve sus servicios de recogida
       
-      const today = new Date().toDateString();
-      const todayPickups = services.filter(s => 
-        s.pickupDate && new Date(s.pickupDate).toDateString() === today
-      ).length;
+      // Servicios de hoy (usando fecha del servidor, no local)
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const todayPickups = services.filter(s => {
+        const pickupDate = s.pickupDate || s.createdAt || s.timestamp;
+        return pickupDate && pickupDate.startsWith(today);
+      }).length;
       
       setStats({
         pendingPickups,
@@ -136,10 +157,17 @@ const Pickup = () => {
         todayPickups
       });
     } catch (error) {
-      console.error('Error loading pickup data:', error);
+      console.error('Error al cargar datos de servicios:', error);
+      setPendingServices([]);
+      setRepartidores([]);
+      setStats({
+        pendingPickups: 0,
+        myPickups: 0,
+        todayPickups: 0
+      });
       showNotification({
         type: 'error',
-        message: 'Error al cargar datos de servicios'
+        message: 'Error al cargar datos de servicios: ' + (error.message || 'Error desconocido')
       });
     }
   };
@@ -148,70 +176,25 @@ const Pickup = () => {
     loadPickupData();
     setSelectedService(null);
     
-    // If we came from Routes, navigate back and update route status
+    // Si venimos de la página de Rutas, volver a ella
     if (location.state?.returnTo === '/routes') {
       showNotification({
         type: 'success',
         message: 'Recojo Completado. Regresando a rutas...'
       });
       
-      // Update route status if needed
-      if (location.state?.routeId && location.state?.hotelIndex !== undefined) {
-        updateRouteAfterPickup(location.state.routeId, location.state.hotelIndex);
-      }
+      // Notificar a otros componentes sobre la actualización
+      window.dispatchEvent(new CustomEvent('serviceUpdated', { 
+        detail: { 
+          type: 'pickup_completion', 
+          serviceId: selectedService?.id 
+        } 
+      }));
       
-      // Navigate back after a short delay to show the success message
+      // Navegar de regreso después de un breve retraso para mostrar el mensaje
       setTimeout(() => {
         navigate('/routes');
       }, 1500);
-    }
-  };
-
-  const updateRouteAfterPickup = (routeId, hotelIndex) => {
-    try {
-      const allRoutes = storage.get('PICKUP_ROUTES') || [];
-      const routeToUpdate = allRoutes.find(r => r.id === routeId);
-      
-      if (!routeToUpdate) return;
-
-      // Mark the hotel as completed
-      const updatedRoutes = allRoutes.map(route => {
-        if (route.id === routeId) {
-          const updatedHotels = route.hotels.map((hotel, index) => {
-            if (index === hotelIndex) {
-              return { 
-                ...hotel, 
-                completed: true, 
-                completedAt: new Date().toISOString(),
-                timeSpent: Math.floor(Math.random() * 30) + 30 // Simulated time spent
-              };
-            }
-            return hotel;
-          });
-          
-          const allCompleted = updatedHotels.every(h => h.completed);
-          
-          return {
-            ...route,
-            hotels: updatedHotels,
-            status: allCompleted ? 'completada' : 'en_progreso',
-            endTime: allCompleted ? new Date().toISOString() : route.endTime
-          };
-        }
-        return route;
-      });
-
-      // Save updated routes
-      storage.set('PICKUP_ROUTES', updatedRoutes);
-      
-      // Notify other pages about route changes
-      window.dispatchEvent(new CustomEvent('routesUpdated', { 
-        detail: { type: 'pickup_completion', routeId } 
-      }));
-      
-      console.log('Route updated after pickup completion:', routeId);
-    } catch (error) {
-      console.error('Error updating route after pickup:', error);
     }
   };
 
@@ -219,13 +202,13 @@ const Pickup = () => {
     loadPickupData();
     setShowCreateForm(false);
     
-    // Notify other pages about potential route changes
-    window.dispatchEvent(new CustomEvent('routesUpdated', { 
+    // Notificar a otros componentes sobre la creación de un nuevo servicio
+    window.dispatchEvent(new CustomEvent('serviceUpdated', { 
       detail: { type: 'service_created' } 
     }));
   };
 
-  // Add manual refresh function for better UX
+  // Función de actualización manual para mejor experiencia de usuario
   const handleManualRefresh = () => {
     loadPickupData();
   };
@@ -242,126 +225,43 @@ const Pickup = () => {
     if (!selectedRepartidor) return;
     
     try {
-      // Try to update service via API
+      // Actualizar el servicio mediante la API
       const updateSuccess = await serviceService.updateServiceStatus(serviceToReassign.id, {
-        status: serviceToReassign.status, // Keep the same status
+        status: serviceToReassign.status, // Mantener el mismo estado
         repartidorId: newRepartidorId,
-        notes: `Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone})`
+        internalNotes: `Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone})`
       });
       
       if (!updateSuccess || !updateSuccess.success) {
-        throw new Error('Failed to update service via API');
+        throw new Error('Error al actualizar el servicio en la API');
       }
       
-      // If API update succeeds, update local state
+      // Actualizar la UI
       showNotification({
         type: 'success',
         message: `Servicio reasignado a ${selectedRepartidor.name}`
       });
+      
+      // Notificar a otros componentes sobre la reasignación
+      window.dispatchEvent(new CustomEvent('serviceUpdated', { 
+        detail: { 
+          type: 'reassignment', 
+          serviceId: serviceToReassign.id 
+        } 
+      }));
+      
+      // Recargar datos y cerrar el formulario
+      loadPickupData();
+      setShowReassignForm(false);
+      setServiceToReassign(null);
+      
     } catch (error) {
-      console.error('Error updating service via API:', error);
-      
-      // Fallback to local storage
-      const services = serviceStorage.getServices();
-      const updatedServices = services.map(service => {
-        if (service.id === serviceToReassign.id) {
-          return {
-            ...service,
-            repartidor: selectedRepartidor.name,
-            repartidorId: selectedRepartidor.id,
-            internalNotes: (service.internalNotes || '') + 
-              ` | Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone}) - ${new Date().toLocaleString('es-PE')}`
-          };
-        }
-        return service;
+      console.error('Error al reasignar el servicio:', error);
+      showNotification({
+        type: 'error',
+        message: `Error al reasignar: ${error.message || 'Error desconocido'}`
       });
-
-      serviceStorage.setServices(updatedServices);
     }
-
-    // Update existing routes to reflect the repartidor change
-    const existingRoutes = storage.get('PICKUP_ROUTES') || [];
-    const updatedRoutes = existingRoutes.map(route => {
-      // Validate route structure
-      if (!route.hotels || !Array.isArray(route.hotels)) {
-        return route;
-      }
-
-      // Find if this route contains the reassigned service
-      const routeHasService = route.hotels.some(hotel => 
-        hotel.services && Array.isArray(hotel.services) && 
-        hotel.services.some(service => service.id === serviceToReassign.id)
-      );
-
-      if (routeHasService) {
-        // Remove the service from this route
-        const updatedHotels = route.hotels.map(hotel => ({
-          ...hotel,
-          services: (hotel.services || []).filter(service => service.id !== serviceToReassign.id)
-        })).filter(hotel => hotel.services && hotel.services.length > 0); // Remove empty hotels
-
-        return {
-          ...route,
-          hotels: updatedHotels,
-          totalPickups: route.totalPickups - 1
-        };
-      }
-      return route;
-    }).filter(route => route.hotels && route.hotels.length > 0); // Remove empty routes
-
-    // Add the service to the new repartidor's route (if exists)
-    const targetRepartidorRouteIndex = updatedRoutes.findIndex(route => 
-      route.repartidorId === selectedRepartidor.id && 
-      route.date === formatDate(new Date())
-    );
-
-    if (targetRepartidorRouteIndex >= 0) {
-      // Find the hotel in the target route or add it
-      const updatedService = updatedServices.find(s => s.id === serviceToReassign.id);
-      const targetRoute = { ...updatedRoutes[targetRepartidorRouteIndex] };
-      
-      // Ensure hotels array exists
-      if (!targetRoute.hotels || !Array.isArray(targetRoute.hotels)) {
-        targetRoute.hotels = [];
-      }
-      
-      const hotelIndex = targetRoute.hotels.findIndex(h => h.id === updatedService.hotelId);
-      
-      if (hotelIndex >= 0) {
-        // Hotel exists, add service
-        if (!targetRoute.hotels[hotelIndex].services) {
-          targetRoute.hotels[hotelIndex].services = [];
-        }
-        targetRoute.hotels[hotelIndex].services.push(updatedService);
-      } else {
-        // Hotel doesn't exist, add hotel with service
-        const hotel = hotelStorage.getHotels().find(h => h.id === updatedService.hotelId);
-        if (hotel) {
-          targetRoute.hotels.push({
-            ...hotel,
-            services: [updatedService]
-          });
-        }
-      }
-      targetRoute.totalPickups = (targetRoute.totalPickups || 0) + 1;
-      updatedRoutes[targetRepartidorRouteIndex] = targetRoute;
-    }
-
-    storage.set('PICKUP_ROUTES', updatedRoutes);
-    
-    // Notify other pages about route changes
-    window.dispatchEvent(new CustomEvent('routesUpdated', { 
-      detail: { type: 'reassignment', serviceId: serviceToReassign.id } 
-    }));
-    
-    loadPickupData();
-    setShowReassignForm(false);
-    setServiceToReassign(null);
-    
-    showNotification({
-      type: 'success',
-      message: `Recojo reasignado a ${selectedRepartidor.name} (Zona ${selectedRepartidor.zone}). ${targetRepartidorRouteIndex < 0 ? 'Genere nuevas rutas para incluir este servicio.' : 'Ruta actualizada automáticamente.'}`
-    });
   };
 
   const handleWorkflowOpen = (service) => {
@@ -424,20 +324,6 @@ const Pickup = () => {
             <RefreshCw className="h-4 w-4 mr-2" />
             Actualizar
           </Button>
-          
-          {isAdmin && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                console.log('=== DEBUG INFO ===');
-                console.log('All services:', serviceStorage.getServices());
-                console.log('All hotels:', hotelStorage.getHotels());
-                console.log('Current user:', user);
-              }}
-            >
-              Debug Info
-            </Button>
-          )}
         </div>
       </div>
 

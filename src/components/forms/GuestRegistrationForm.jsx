@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
-import { hotelStorage, serviceStorage, auditStorage, bagLabelStorage, storage } from '../../utils/storage';
-import { generateId, calculateServicePrice, assignRepartidorByZone, getAutomaticPriority } from '../../utils';
+import { calculateServicePrice, getAutomaticPriority } from '../../utils';
 import { SERVICE_STATUS } from '../../types';
-import { APP_CONFIG } from '../../constants';
 import guestService from '../../services/guest.service';
 import hotelService from '../../services/hotel.service';
 import serviceService from '../../services/service.service';
-import bagLabelService from '../../services/bagLabel.service';
+import userService from '../../services/user.service';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
@@ -41,44 +39,34 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
   
   const fetchInitialData = async () => {
     try {
-      // Try to load hotels from API
+      // Cargar hoteles desde la API
       const hotelsResponse = await hotelService.getAllHotels();
       if (hotelsResponse.success && hotelsResponse.data) {
         setHotels(hotelsResponse.data);
       } else {
-        // Fallback to local storage
-        const hotelData = hotelStorage.getHotels();
-        setHotels(hotelData);
+        throw new Error('No se pudieron cargar los hoteles');
       }
       
-      // Try to load repartidores from API - will need userService but using storage for now
-      try {
-        // In future will be: const usersResponse = await userService.getUsersByRole('REPARTIDOR');
-        // For now, use local storage
-        const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-        const repartidoresList = allUsers.filter(user => user.role === 'repartidor');
-        setRepartidores(repartidoresList);
-      } catch (error) {
-        console.error('Error loading repartidores:', error);
-        // Fallback to local storage
-        const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-        const repartidoresList = allUsers.filter(user => user.role === 'repartidor');
-        setRepartidores(repartidoresList);
+      // Cargar repartidores desde la API
+      const repartidoresResponse = await userService.getRepartidores({ active: true });
+      if (repartidoresResponse.success && repartidoresResponse.data) {
+        console.log('Repartidores cargados de la API:', repartidoresResponse.data);
+        setRepartidores(repartidoresResponse.data);
+      } else {
+        throw new Error('No se pudieron cargar los repartidores');
       }
     } catch (error) {
-      console.error('Error loading initial data:', error);
+      console.error('Error al cargar datos iniciales:', error);
+      
+      // Mostrar error específico
       showNotification({
         type: 'error',
-        message: 'Error al cargar datos iniciales. Usando datos locales.'
+        message: `Error al cargar datos: ${error.message || 'Error desconocido'}`
       });
       
-      // Fallback to local storage
-      const hotelData = hotelStorage.getHotels();
-      setHotels(hotelData);
-      
-      const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-      const repartidoresList = allUsers.filter(user => user.role === 'repartidor');
-      setRepartidores(repartidoresList);
+      // Inicializar con arrays vacíos en caso de error
+      setHotels([]);
+      setRepartidores([]);
     }
   };
 
@@ -104,36 +92,7 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
     }
   }, [watchedFields.hotelId, watchedFields.bagCount, hotels, setValue]);
 
-  const generateBagLabels = (hotelName, serviceId, bagCount) => {
-    const labels = [];
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    const hotelCode = hotelName.substring(0, 3).toUpperCase();
-    
-    for (let i = 1; i <= bagCount; i++) {
-      const timeStr = today.toTimeString().slice(0, 5).replace(':', '');
-      const bagNumber = i.toString().padStart(2, '0');
-      const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
-      
-      const label = `${hotelCode}-${dateStr}-${timeStr}-${bagNumber}-${random}`;
-      
-      labels.push({
-        id: generateId(),
-        serviceId: serviceId,
-        hotelId: null, // Will be set when service is created
-        hotelName: hotelName,
-        label: label,
-        bagNumber: i,
-        registeredBy: user.id,
-        registeredByName: user.name,
-        timestamp: new Date().toISOString(),
-        status: 'generated',
-        generatedAt: 'hotel'
-      });
-    }
-    
-    return labels;
-  };
+  // Las etiquetas ahora serán generadas por el backend
 
   const onSubmit = async (data) => {
     try {
@@ -145,40 +104,32 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
         return;
       }
 
-      // Validate inventory via API if possible
-      let inventoryValid = false;
-      try {
-        const inventoryResponse = await guestService.validateInventory(
-          selectedHotel.id, 
-          parseInt(data.bagCount)
-        );
-        
-        inventoryValid = inventoryResponse.success && inventoryResponse.data?.valid;
-        if (!inventoryValid && inventoryResponse.data?.message) {
-          showNotification({
-            type: 'error',
-            message: inventoryResponse.data.message
-          });
-          return;
-        }
-      } catch (error) {
-        // If API validation fails, fallback to local validation
-        console.error('Error validating inventory via API:', error);
-        inventoryValid = selectedHotel.bagInventory >= parseInt(data.bagCount);
-        
-        if (!inventoryValid) {
-          showNotification({
-            type: 'error',
-            message: `${selectedHotel.name} solo tiene ${selectedHotel.bagInventory} bolsas disponibles`
-          });
-          return;
-        }
+      // Validar inventario mediante API
+      const inventoryResponse = await guestService.validateInventory(
+        selectedHotel.id, 
+        parseInt(data.bagCount)
+      );
+      
+      const inventoryValid = inventoryResponse.success && inventoryResponse.data?.valid;
+      if (!inventoryValid) {
+        showNotification({
+          type: 'error',
+          message: inventoryResponse.data?.message || `Inventario insuficiente para ${data.bagCount} bolsas`
+        });
+        return;
       }
 
-      // Get manually selected repartidor
+      // Obtener repartidor seleccionado
       const assignedRepartidor = repartidores.find(r => r.id === data.repartidorId);
+      if (!assignedRepartidor) {
+        showNotification({
+          type: 'error',
+          message: 'Debe seleccionar un repartidor válido'
+        });
+        return;
+      }
       
-      // Determine final priority (manual or automatic)
+      // Determinar prioridad final (manual o automática)
       let finalPriority;
       if (data.priority === 'auto') {
         finalPriority = getAutomaticPriority(data.observations);
@@ -186,158 +137,55 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
         finalPriority = data.priority;
       }
 
-      // Generate estimated pickup date (next day between 9-11 AM)
+      // Generar hora estimada de recogida (día siguiente entre 9-11 AM)
       const estimatedPickupDate = new Date();
       estimatedPickupDate.setDate(estimatedPickupDate.getDate() + 1);
-      estimatedPickupDate.setHours(9 + Math.floor(Math.random() * 3), Math.floor(Math.random() * 60), 0, 0);
+      estimatedPickupDate.setHours(9, 0, 0, 0); // 9:00 AM fijo para evitar datos aleatorios
 
-      // Prepare service data
+      // Preparar datos del servicio
       const serviceData = {
         guestName: data.guestName,
-        roomNumber: 'N/A', // Hotel pickup, no specific room
+        roomNumber: 'N/A', // Recogida en hotel, sin habitación específica
         hotelId: selectedHotel.id,
         bagCount: parseInt(data.bagCount),
         observations: data.observations || '',
         priority: finalPriority,
         estimatedPickupDate: estimatedPickupDate.toISOString(),
-        repartidorId: assignedRepartidor ? assignedRepartidor.id : null,
-        pickupTimeSlot: `${9 + Math.floor(Math.random() * 3)}:00 - ${11 + Math.floor(Math.random() * 3)}:00`,
+        repartidorId: assignedRepartidor.id,
+        pickupTimeSlot: '9:00 - 11:00', // Horario fijo para evitar datos aleatorios
         specialInstructions: ''
       };
 
-      // Try to create service with API
-      let newService = null;
-      let serviceCreated = false;
-      let serviceBagLabels = [];
+      // Crear servicio mediante API
+      const guestResponse = await guestService.registerGuestWithService(serviceData);
       
-      try {
-        // Register guest with service in one call
-        const guestResponse = await guestService.registerGuestWithService(serviceData);
-        
-        if (guestResponse.success && guestResponse.data) {
-          newService = guestResponse.data.service;
-          serviceCreated = true;
-          
-          // Get any bag labels that were created by the API
-          if (guestResponse.data.labels && guestResponse.data.labels.length > 0) {
-            serviceBagLabels = guestResponse.data.labels;
-          }
-        }
-      } catch (apiError) {
-        console.error('Error creating service via API:', apiError);
-        serviceCreated = false;
+      if (!guestResponse.success) {
+        throw new Error(guestResponse.message || 'Error al registrar el servicio');
       }
       
-      // If API call failed, fallback to local storage
-      if (!serviceCreated) {
-        // Create new service with automatic assignments (for local storage)
-        newService = {
-          id: generateId(),
-          guestName: data.guestName,
-          roomNumber: 'N/A', // Hotel pickup, no specific room
-          hotel: selectedHotel.name,
-          hotelId: selectedHotel.id,
-          bagCount: parseInt(data.bagCount),
-          weight: null, // Will be filled during pickup
-          observations: data.observations || '',
-          specialInstructions: '',
-          priority: finalPriority,
-          pickupDate: null,
-          estimatedPickupDate: estimatedPickupDate.toISOString(),
-          deliveryDate: null,
-          estimatedDeliveryDate: null,
-          status: SERVICE_STATUS.PENDING_PICKUP,
-          photos: [],
-          signature: '',
-          collectorName: '',
-          geolocation: { lat: 0, lng: 0 },
-          repartidor: assignedRepartidor ? assignedRepartidor.name : '',
-          repartidorId: assignedRepartidor ? assignedRepartidor.id : '',
-          partialDeliveryPercentage: null,
-          price: 0, // Will be calculated during pickup
-          pickupTimeSlot: `${9 + Math.floor(Math.random() * 3)}:00 - ${11 + Math.floor(Math.random() * 3)}:00`,
-          customerNotes: '',
-          internalNotes: assignedRepartidor ? 
-            `Asignado manualmente a ${assignedRepartidor.name} (Zona ${assignedRepartidor.zone})` : 
-            'Sin repartidor asignado',
-          timestamp: new Date().toISOString()
-        };
-
-        // Generate bag labels for this service
-        const bagLabels = generateBagLabels(selectedHotel.name, newService.id, parseInt(data.bagCount));
-        
-        // Update labels with hotelId
-        bagLabels.forEach(label => {
-          label.hotelId = selectedHotel.id;
-        });
-
-        // Save service locally
-        const serviceSuccess = serviceStorage.addService(newService);
-        
-        // Save bag labels locally
-        let labelsSuccess = true;
-        if (serviceSuccess) {
-          bagLabels.forEach(label => {
-            const labelSaved = bagLabelStorage.addBagLabel(label);
-            if (!labelSaved) {
-              labelsSuccess = false;
-            }
-          });
-          
-          // Set for display
-          serviceBagLabels = bagLabels;
-        }
-        
-        serviceCreated = serviceSuccess && labelsSuccess;
-        
-        if (serviceCreated) {
-          // Update hotel inventory (subtract bags given to guest)
-          const updatedInventory = selectedHotel.bagInventory - parseInt(data.bagCount);
-          hotelStorage.updateHotel(selectedHotel.id, { bagInventory: updatedInventory });
-
-          // Add local audit log
-          const priorityText = finalPriority === 'high' ? ' [URGENTE]' : 
-                             finalPriority === 'medium' ? ' [NORMAL]' : 
-                             finalPriority === 'low' ? ' [BAJA PRIORIDAD]' : '';
-          
-          auditStorage.addAuditEntry({
-            action: 'PICKUP_ORDER_CREATED',
-            user: user.name,
-            details: `Creó orden de recojo para ${data.guestName} en ${selectedHotel.name}. ${data.bagCount} bolsas para recoger.${priorityText}`
-          });
-        }
-      }
+      const newService = guestResponse.data.service;
       
-      // Handle success (both API and local storage paths)
-      if (serviceCreated) {
-        const repartidorInfo = assignedRepartidor 
-          ? `Asignado a ${assignedRepartidor.name} (Zona ${assignedRepartidor.zone}).`
-          : 'Sin repartidor asignado.';
-        
-        showNotification({
-          type: 'success',
-          message: `Orden para ${data.guestName} creada exitosamente. ${data.bagCount} bolsas para recoger. ${repartidorInfo}`
-        });
+      // Mostrar notificación de éxito
+      const repartidorInfo = `Asignado a ${assignedRepartidor.name} (Zona ${assignedRepartidor.zone}).`;
+      
+      showNotification({
+        type: 'success',
+        message: `Orden para ${data.guestName} creada exitosamente. ${data.bagCount} bolsas para recoger. ${repartidorInfo}`
+      });
 
-        if (onServiceCreated) {
-          onServiceCreated(newService);
-        }
+      if (onServiceCreated) {
+        onServiceCreated(newService);
+      }
 
-        reset();
-        if (onClose) {
-          onClose();
-        }
-      } else {
-        showNotification({
-          type: 'error',
-          message: 'No se pudo crear la orden de recojo'
-        });
+      reset();
+      if (onClose) {
+        onClose();
       }
     } catch (err) {
-      console.error('Error creating pickup order:', err);
+      console.error('Error al crear orden de recojo:', err);
       showNotification({
         type: 'error',
-        message: 'Ocurrió un error al crear la orden de recojo'
+        message: `Error al crear orden: ${err.message || 'Error desconocido'}`
       });
     }
   };

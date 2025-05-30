@@ -143,12 +143,20 @@ class UserService {
       const queryParams = new URLSearchParams();
       
       if (filters.zone) queryParams.append('zone', filters.zone);
-      if (filters.active !== undefined) queryParams.append('active', filters.active);
+      // Por defecto, solo obtener usuarios activos
+      if (filters.active !== undefined) {
+        queryParams.append('active', filters.active);
+      } else {
+        queryParams.append('active', 'true');
+      }
       
       const queryString = queryParams.toString();
       const endpoint = queryString ? `/users/repartidores?${queryString}` : '/users/repartidores';
       
+      console.log('Solicitando repartidores al endpoint:', endpoint);
       const response = await api.get(endpoint);
+      console.log('Respuesta de repartidores:', response.data);
+      
       return response.data;
     } catch (error) {
       console.error('Error fetching repartidores:', error);
