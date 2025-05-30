@@ -158,6 +158,9 @@ const MapaSelector = ({ onSelectLocation, onClose, initialCoordinates }) => {
       return;
     }
     
+    // Registrar las coordenadas en la consola pero no mostrarlas en la UI
+    console.log(`Coordenadas GPS seleccionadas en mapa: ${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`);
+    
     onSelectLocation({
       direccion,
       coordenadas: selectedLocation
@@ -260,7 +263,7 @@ const MapaSelector = ({ onSelectLocation, onClose, initialCoordinates }) => {
             
             {selectedLocation && (
               <p className="text-xs text-gray-500 mt-1">
-                Coordenadas: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                Ubicación registrada en el sistema
               </p>
             )}
           </div>

@@ -4,6 +4,7 @@ import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
 import { hotelStorage, auditStorage, serviceStorage } from '../utils/storage';
 import { formatCurrency, generateId, validateEmail, validatePhone } from '../utils';
+import { determinarZona } from '../constants/zonas-lima';
 import { SERVICE_STATUS } from '../types';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -256,8 +257,11 @@ const Hotels = () => {
     setValue('email', hotel.email);
     setValue('bagInventory', hotel.bagInventory);
     setValue('pricePerKg', hotel.pricePerKg);
-    // Establecer la zona si existe, o usar SUR como valor predeterminado
-    setValue('zone', hotel.zone || 'SUR');
+    
+    // Establecer la zona
+    const zona = hotel.zone || 'SUR';
+    setValue('zone', zona);
+    console.log(`Estableciendo zona para hotel en edición: ${zona}`);
     
     // Establecer coordenadas si existen
     if (hotel.latitude && hotel.longitude) {
@@ -265,6 +269,13 @@ const Hotels = () => {
       setAddressValid(true);
       setValue('latitude', hotel.latitude);
       setValue('longitude', hotel.longitude);
+      
+      // Intentar determinar la zona a partir de la dirección
+      if (hotel.address) {
+        const zonaDetectada = determinarZona(hotel.address, zona);
+        setValue('zone', zonaDetectada);
+        console.log(`Zona detectada para dirección existente: ${zonaDetectada}`);
+      }
     } else {
       setAddressCoordinates({ lat: null, lng: null });
       setAddressValid(false);
@@ -589,6 +600,14 @@ const Hotels = () => {
                 error('Dirección inválida', 'Por favor seleccione o valide una dirección válida antes de continuar');
                 return;
               }
+              
+              // Asegurar que la zona viene de la detección automática
+              // Si estamos editando un hotel y no se ha cambiado la dirección, permitimos usar la zona existente
+              if (!addressValid && editingHotel) {
+                // Mantener la zona existente para hoteles en edición
+                setValue('zone', editingHotel.zone || 'SUR');
+              }
+              
               handleSubmit(onSubmit)(e);
             }} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -611,6 +630,9 @@ const Hotels = () => {
                 <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Zona <span className="text-red-500">*</span>
+                    <span className="text-xs text-blue-600 ml-2">
+                      (Se completa automáticamente)
+                    </span>
                   </label>
                   <div className="flex items-center">
                     <MapPin className="h-4 w-4 text-gray-400 mr-2" />
@@ -618,8 +640,11 @@ const Hotels = () => {
                       {...register('zone', {
                         required: 'La zona es requerida'
                       })}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                      className={`block w-full rounded-md shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm ${
+                        addressValid ? 'border-green-500 bg-green-50' : 'bg-gray-50'
+                      } border-gray-300 cursor-not-allowed`}
                       defaultValue="SUR"
+                      disabled
                     >
                       <option value="NORTE">Norte</option>
                       <option value="SUR">Sur</option>
@@ -631,6 +656,9 @@ const Hotels = () => {
                   {errors.zone && (
                     <p className="mt-1 text-sm text-red-600">{errors.zone.message}</p>
                   )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    La zona se detecta automáticamente según la dirección y no puede modificarse manualmente.
+                  </p>
                 </div>
 
                 <div className="md:col-span-2">
@@ -638,9 +666,14 @@ const Hotels = () => {
                     initialValue={editingHotel?.address || ''}
                     onChange={handleAddressChange}
                     onValidChange={handleAddressValidChange}
+                    onZoneChange={(zona) => {
+                      setValue('zone', zona);
+                      console.log(`Zona detectada automáticamente: ${zona}`);
+                    }}
                     required={true}
                     label="Dirección"
                     placeholder="Ej: Malecón de la Reserva 555, Miraflores"
+                    defaultZone={editingHotel?.zone || 'SUR'}
                   />
                   {!addressValid && (
                     <p className="mt-1 text-sm text-amber-600">

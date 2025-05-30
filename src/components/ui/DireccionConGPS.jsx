@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNotifications } from '../../store/NotificationContext';
 import { MapPin, Search, X } from 'lucide-react';
 import MapaSelector from './MapaSelector';
+import { determinarZona } from '../../constants/zonas-lima';
 
 /**
  * DireccionConGPS - Componente para autocompletar direcciones y obtener coordenadas GPS
@@ -10,19 +11,23 @@ import MapaSelector from './MapaSelector';
  * @param {string} props.initialValue - Valor inicial del campo de dirección
  * @param {function} props.onChange - Función a llamar cuando cambia la dirección o las coordenadas
  * @param {function} props.onValidChange - Función a llamar cuando la validación cambia
+ * @param {function} props.onZoneChange - Función a llamar cuando se detecta la zona
  * @param {boolean} props.required - Indica si el campo es obligatorio
  * @param {string} props.label - Etiqueta para el campo
  * @param {string} props.placeholder - Placeholder para el campo
  * @param {string} props.className - Clases adicionales para el componente
+ * @param {string} props.defaultZone - Zona por defecto si no se puede determinar
  */
 const DireccionConGPS = ({
   initialValue = '',
   onChange,
   onValidChange,
+  onZoneChange,
   required = false,
   label = 'Dirección',
   placeholder = 'Ingrese la dirección',
   className = '',
+  defaultZone = 'CENTRO',
 }) => {
   const [direccion, setDireccion] = useState(initialValue);
   const [sugerencias, setSugerencias] = useState([]);
@@ -62,6 +67,11 @@ const DireccionConGPS = ({
     
     if (onValidChange) {
       onValidChange(direccionValida);
+    }
+    
+    // Registrar coordenadas en consola pero no mostrarlas en UI
+    if (direccionValida && coordenadas.lat && coordenadas.lng) {
+      console.log(`Coordenadas GPS: ${coordenadas.lat.toFixed(6)}, ${coordenadas.lng.toFixed(6)}`);
     }
   }, [direccion, coordenadas, direccionValida, onChange, onValidChange]);
 
@@ -151,6 +161,10 @@ const DireccionConGPS = ({
     }
     
     const direccionCompleta = sugerencia.display_name;
+    
+    // Determinar la zona de Lima
+    const zona = determinarZona(direccionCompleta, defaultZone);
+    
     setDireccion(direccionCompleta);
     setCoordenadas({
       lat: parseFloat(sugerencia.lat),
@@ -158,6 +172,11 @@ const DireccionConGPS = ({
     });
     setMostrarSugerencias(false);
     setDireccionValida(true);
+    
+    // Notificar la zona detectada
+    if (onZoneChange) {
+      onZoneChange(zona);
+    }
   };
 
   // Validar manualmente la dirección actual (si se escribe manualmente)
@@ -195,12 +214,24 @@ const DireccionConGPS = ({
         const isInLima = data[0].display_name.toLowerCase().includes('lima');
         
         if (isInLima) {
+          const direccionCompleta = data[0].display_name;
+          
+          // Determinar la zona de Lima
+          const zona = determinarZona(direccionCompleta, defaultZone);
+          
+          // Actualizar coordenadas
           setCoordenadas({
             lat: parseFloat(data[0].lat),
             lng: parseFloat(data[0].lon)
           });
+          
           setDireccionValida(true);
           showNotification('Dirección validada correctamente', 'success');
+          
+          // Notificar la zona detectada
+          if (onZoneChange) {
+            onZoneChange(zona);
+          }
         } else {
           setCoordenadas({ lat: null, lng: null });
           setDireccionValida(false);
@@ -226,7 +257,12 @@ const DireccionConGPS = ({
   // Manejar selección de ubicación desde el mapa
   const handleSeleccionUbicacionMapa = (ubicacion) => {
     if (ubicacion && ubicacion.direccion && ubicacion.coordenadas) {
-      setDireccion(ubicacion.direccion);
+      const direccionCompleta = ubicacion.direccion;
+      
+      // Determinar la zona de Lima
+      const zona = determinarZona(direccionCompleta, defaultZone);
+      
+      setDireccion(direccionCompleta);
       setCoordenadas(ubicacion.coordenadas);
       setDireccionValida(true);
       showNotification('Ubicación seleccionada correctamente', 'success');
@@ -234,9 +270,14 @@ const DireccionConGPS = ({
       // Notificar el cambio
       if (onChange) {
         onChange({
-          direccion: ubicacion.direccion,
+          direccion: direccionCompleta,
           coordenadas: ubicacion.coordenadas
         });
+      }
+      
+      // Notificar la zona detectada
+      if (onZoneChange) {
+        onZoneChange(zona);
       }
     }
   };
@@ -285,11 +326,16 @@ const DireccionConGPS = ({
                     setDireccion('');
                     setCoordenadas({ lat: null, lng: null });
                     setDireccionValida(false);
+                    
                     if (onChange) {
                       onChange({
                         direccion: '',
                         coordenadas: { lat: null, lng: null }
                       });
+                    }
+                    
+                    if (onZoneChange) {
+                      onZoneChange(defaultZone);
                     }
                   }}
                   className="text-gray-400 hover:text-red-500 focus:outline-none"
@@ -359,7 +405,7 @@ const DireccionConGPS = ({
       {direccionValida && coordenadas.lat && coordenadas.lng && (
         <div className="mt-1">
           <p className="text-sm text-green-600">
-            <span className="font-medium">✓ Dirección validada.</span> Coordenadas: {coordenadas.lat.toFixed(6)}, {coordenadas.lng.toFixed(6)}
+            <span className="font-medium">✓ Dirección validada.</span>
           </p>
           <p className="text-xs text-gray-500 mt-1">
             (Si necesita cambiar la dirección, borre el texto completamente o use el selector de mapa)
