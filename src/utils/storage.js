@@ -85,6 +85,19 @@ export const serviceStorage = {
       return serviceStorage.setServices(services);
     }
     return false;
+  },
+  getServicesByZone: (zone) => {
+    const services = serviceStorage.getServices();
+    return services.filter(s => {
+      // Verificar si el hotel tiene la misma zona
+      const hotelZone = s.hotel?.zone || 
+                       (typeof s.hotel === 'string' ? s.hotelZone : null);
+      return hotelZone === zone;
+    });
+  },
+  getServicesByRepartidor: (repartidorId) => {
+    const services = serviceStorage.getServices();
+    return services.filter(s => s.repartidorId === repartidorId || s.deliveryRepartidorId === repartidorId);
   }
 };
 

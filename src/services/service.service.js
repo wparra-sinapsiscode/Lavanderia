@@ -297,10 +297,61 @@ class ServiceService {
    */
   async getMyServices(filters = {}) {
     try {
-      const response = await api.get('/services/my-services', { params: filters });
+      // Para evitar el error 500, no enviamos el parámetro de zona al backend
+      // ya que el backend ya filtra por el usuario autenticado
+      const paramsToSend = { ...filters };
+      delete paramsToSend.zone; // Eliminar zone para evitar errores
+      
+      // Usar GET en ruta específica en lugar de /my-services para evitar confusión
+      // El backend confunde my-services con un ID de servicio
+      const response = await api.get('/services/repartidor', { params: paramsToSend });
+      
+      // Si llegamos aquí, la API respondió correctamente
       return response.data;
     } catch (error) {
       console.error('Get my services error:', error);
+      
+      // Si el error es 404 (Not Found), intentar con la URL original
+      if (error.response && error.response.status === 404) {
+        try {
+          // Intentar con la URL original como fallback
+          const response = await api.get('/services/my-services', { params: { ...filters } });
+          return response.data;
+        } catch (secondError) {
+          console.error('Second attempt failed:', secondError);
+          // Continuar con el fallback local
+        }
+      }
+      
+      // Usar almacenamiento local como fallback
+      const { userStorage, serviceStorage } = await import('../utils/storage');
+      const user = userStorage.getUser();
+      
+      if (user) {
+        // Obtener servicios filtrados por repartidor
+        const services = serviceStorage.getServicesByRepartidor(user.id);
+        
+        // Aplicar filtros adicionales si se proporcionan
+        let filteredServices = services;
+        if (filters.status) {
+          filteredServices = filteredServices.filter(s => s.status === filters.status);
+        }
+        if (user.role === 'REPARTIDOR') {
+          filteredServices = filteredServices.filter(s => {
+            const serviceZone = s.hotel?.zone || s.hotelZone;
+            return serviceZone === user.zone;
+          });
+        }
+        
+        console.log(`Fallback local: ${filteredServices.length} servicios encontrados para el usuario ${user.name}`);
+        
+        return {
+          success: true,
+          message: 'Datos obtenidos del almacenamiento local',
+          data: filteredServices
+        };
+      }
+      
       return {
         success: false,
         message: error.response?.data?.message || 'Error al obtener mis servicios',

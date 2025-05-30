@@ -543,6 +543,17 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                 <p className="text-blue-900">{typeof hotel === 'object' ? hotel.name : hotel}</p>
               </div>
               <div>
+                <p className="text-blue-700 font-medium">Teléfono Hotel:</p>
+                <p className="text-blue-900 font-medium">
+                  {typeof hotel === 'object' ? 
+                    (hotel.phone || hotel.contactPhone || "No disponible") : 
+                    "No disponible"}
+                </p>
+                {typeof hotel === 'object' && hotel.contactPerson && (
+                  <p className="text-xs text-blue-600">Contacto: {hotel.contactPerson}</p>
+                )}
+              </div>
+              <div>
                 <p className="text-blue-700 font-medium">Habitación:</p>
                 <p className="text-blue-900">{service.roomNumber}</p>
               </div>
@@ -555,7 +566,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                 <p className="text-blue-900">{service.bagCount}</p>
                 <p className="text-xs text-blue-600">Se puede ajustar abajo</p>
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <p className="text-blue-700 font-medium">Observaciones Iniciales:</p>
                 <p className="text-blue-900">{service.observations || 'Ninguna'}</p>
               </div>
