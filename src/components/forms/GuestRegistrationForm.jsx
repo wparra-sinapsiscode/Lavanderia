@@ -19,6 +19,8 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [estimatedPrice, setEstimatedPrice] = useState(0);
   const [repartidores, setRepartidores] = useState([]);
+  // Estado para controlar si el campo de contacto debe bloquearse
+  const [contactFieldLocked, setContactFieldLocked] = useState(false);
 
   const { register, handleSubmit, watch, reset, setValue, formState: { errors } } = useForm({
     defaultValues: {
@@ -71,6 +73,7 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
     }
   };
 
+  // Efecto separado para cuando cambie el hotel
   useEffect(() => {
     if (watchedFields.hotelId) {
       const hotel = hotels.find(h => h.id === watchedFields.hotelId);
@@ -79,19 +82,31 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       // Auto-complete guest name with hotel contact person
       if (hotel && hotel.contactPerson) {
         setValue('guestName', hotel.contactPerson);
-      }
-      
-      if (hotel && watchedFields.bagCount) {
-        // Estimate price based on average weight per bag (5kg) and bag count
-        const estimatedWeight = watchedFields.bagCount * 5;
-        const price = calculateServicePrice(
-          estimatedWeight,
-          hotel.pricePerKg
-        );
-        setEstimatedPrice(price);
+        
+        // Bloquear el campo de contacto cuando se autocompleta, pero solo si no estaba bloqueado antes
+        if (!contactFieldLocked) {
+          setContactFieldLocked(true);
+          
+          // Mostrar notificación informativa solo una vez
+          // La notificación se mostrará en la UI, no necesitamos hacerlo aquí
+          // para evitar el bucle infinito
+        }
       }
     }
-  }, [watchedFields.hotelId, watchedFields.bagCount, hotels, setValue]);
+  }, [watchedFields.hotelId, hotels, setValue, contactFieldLocked]);
+  
+  // Efecto separado para cálculo de precio cuando cambie bagCount
+  useEffect(() => {
+    if (selectedHotel && watchedFields.bagCount) {
+      // Estimate price based on average weight per bag (5kg) and bag count
+      const estimatedWeight = watchedFields.bagCount * 5;
+      const price = calculateServicePrice(
+        estimatedWeight,
+        selectedHotel.pricePerKg
+      );
+      setEstimatedPrice(price);
+    }
+  }, [watchedFields.bagCount, selectedHotel]);
 
   // Las etiquetas ahora serán generadas por el backend
 
@@ -268,30 +283,52 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
           </div>
 
           {/* Contact Name */}
-          <Input
-            label="Contacto del Hotel"
-            {...register('guestName', {
-              required: 'El nombre del contacto es requerido',
-              minLength: {
-                value: 2,
-                message: 'El nombre debe tener al menos 2 caracteres'
-              }
-            })}
-            error={errors.guestName?.message}
-            placeholder="Se autocompletará con el contacto del hotel"
-            required
-          />
+          <div className="relative">
+            <Input
+              label={<>Contacto del Hotel <span className="text-red-500">*</span> {contactFieldLocked && <span className="ml-2 text-blue-600 text-xs">(Bloqueado)</span>}</>}
+              {...register('guestName', {
+                required: 'El nombre del contacto es requerido',
+                minLength: {
+                  value: 2,
+                  message: 'El nombre debe tener al menos 2 caracteres'
+                }
+              })}
+              error={errors.guestName?.message}
+              placeholder="Se autocompletará con el contacto del hotel"
+              required
+              disabled={contactFieldLocked}
+              className={contactFieldLocked ? 'bg-gray-100' : ''}
+            />
+          </div>
           
           {/* Room Number */}
-          <Input
-            label="Número de Habitación"
-            {...register('roomNumber', {
-              required: 'El número de habitación es requerido'
-            })}
-            error={errors.roomNumber?.message}
-            placeholder="Ej: 101, Suite 3, etc."
-            required
-          />
+          <div className="relative">
+            <Input
+              label={<>Número de Habitación <span className="text-red-500">*</span></>}
+              {...register('roomNumber', {
+                required: 'El número de habitación es requerido'
+              })}
+              error={errors.roomNumber?.message}
+              placeholder="Ej: 101, Suite 3, etc."
+              required
+            />
+          </div>
+          
+          {/* Botón para desbloquear campo de contacto si está bloqueado */}
+          {contactFieldLocked && (
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => setContactFieldLocked(false)}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium inline-flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Desbloquear campo de contacto
+              </button>
+            </div>
+          )}
 
           {/* Repartidor Assignment */}
           <div>
