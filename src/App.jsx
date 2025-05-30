@@ -41,9 +41,13 @@ const AppContent = () => {
   const { isAuthenticated } = useAuth();
 
   const [dataInitialized, setDataInitialized] = useState(false);
-  const [useSimulatedData, setUseSimulatedData] = useState(
-    localStorage.getItem('fumy_limp_disable_demo') !== 'true'
-  );
+  // Desactivar datos simulados por defecto
+  const [useSimulatedData, setUseSimulatedData] = useState(false);
+  
+  // Establecer flag para desactivar datos simulados
+  useEffect(() => {
+    localStorage.setItem('fumy_limp_disable_demo', 'true');
+  }, []);
   
   // Effect to listen for changes to the simulated data setting
   useEffect(() => {

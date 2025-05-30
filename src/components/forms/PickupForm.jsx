@@ -298,7 +298,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           auditStorage.addAuditEntry({
             action: 'PICKUP_COMPLETED',
             user: user.name,
-            details: `Recojo completado para ${service.guestName} - ${hotel.name}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}`
+            details: `Recojo completado para ${service.guestName} - ${typeof hotel === 'object' ? hotel.name : hotel}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}`
           });
         }
       }
@@ -387,7 +387,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         </h3>
         <div className="text-sm text-gray-600">
           <p>{service.guestName} - Hab. {service.roomNumber}</p>
-          <p>{hotel.name}</p>
+          <p>{typeof hotel === 'object' ? hotel.name : hotel}</p>
         </div>
       </Card.Header>
       <Card.Content>
@@ -402,7 +402,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
               </div>
               <div>
                 <p className="text-blue-700 font-medium">Hotel:</p>
-                <p className="text-blue-900">{hotel.name}</p>
+                <p className="text-blue-900">{typeof hotel === 'object' ? hotel.name : hotel}</p>
               </div>
               <div>
                 <p className="text-blue-700 font-medium">Habitación:</p>

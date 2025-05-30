@@ -368,7 +368,7 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
               <option value="">Seleccionar hotel...</option>
               {hotels.map((hotel) => (
                 <option key={hotel.id} value={hotel.id}>
-                  {hotel.name} - {hotel.bagInventory} bolsas disponibles
+                  {typeof hotel === 'object' && hotel.name ? `${hotel.name} - ${hotel.bagInventory} bolsas disponibles` : hotel}
                 </option>
               ))}
             </select>
@@ -508,19 +508,19 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-gray-600">Contacto:</p>
-                  <p className="font-medium">{selectedHotel.contactPerson}</p>
+                  <p className="font-medium">{typeof selectedHotel === 'object' ? selectedHotel.contactPerson : ''}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Teléfono:</p>
-                  <p className="font-medium">{selectedHotel.phone}</p>
+                  <p className="font-medium">{typeof selectedHotel === 'object' ? selectedHotel.phone : ''}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Zona:</p>
-                  <p className="font-medium">{selectedHotel.zone}</p>
+                  <p className="font-medium">{typeof selectedHotel === 'object' ? selectedHotel.zone : ''}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Precio por kg:</p>
-                  <p className="font-medium">S/ {selectedHotel.pricePerKg}</p>
+                  <p className="font-medium">S/ {typeof selectedHotel === 'object' ? selectedHotel.pricePerKg : ''}</p>
                 </div>
               </div>
             </div>

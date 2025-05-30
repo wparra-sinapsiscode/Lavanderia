@@ -536,7 +536,7 @@ const Pickup = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {service.hotel}
+                        {typeof service.hotel === 'object' ? service.hotel.name : service.hotel}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
@@ -570,7 +570,7 @@ const Pickup = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {service.repartidor ? (
                           <div className="flex items-center space-x-2">
-                            <span>{service.repartidor}</span>
+                            <span>{typeof service.repartidor === 'object' ? service.repartidor.name : service.repartidor}</span>
                             {isAdmin && (
                               <Button
                                 size="xs"
@@ -656,7 +656,7 @@ const Pickup = () => {
               </h3>
               <div className="mb-4">
                 <p className="text-sm text-gray-600 mb-2">
-                  <strong>Hotel:</strong> {serviceToReassign.hotel}
+                  <strong>Hotel:</strong> {typeof serviceToReassign.hotel === 'object' ? serviceToReassign.hotel.name : serviceToReassign.hotel}
                 </p>
                 <p className="text-sm text-gray-600 mb-2">
                   <strong>Contacto:</strong> {serviceToReassign.guestName}

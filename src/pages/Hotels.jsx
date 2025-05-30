@@ -8,6 +8,7 @@ import { SERVICE_STATUS } from '../types';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import hotelService from '../services/hotel.service';
 import { 
   Building, 
   Plus, 
@@ -21,7 +22,9 @@ import {
   DollarSign,
   Save,
   X,
-  Activity
+  Activity,
+  Loader,
+  RefreshCw
 } from 'lucide-react';
 
 const Hotels = () => {
@@ -31,6 +34,8 @@ const Hotels = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingHotel, setEditingHotel] = useState(null);
   const [selectedHotel, setSelectedHotel] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState(null);
   const [stats, setStats] = useState({
     totalHotels: 0,
     activeServices: 0,
@@ -55,10 +60,32 @@ const Hotels = () => {
     loadHotels();
   }, [isAdmin]);
 
-  const loadHotels = () => {
-    const hotelData = hotelStorage.getHotels();
-    setHotels(hotelData);
-    calculateStats(hotelData);
+  const loadHotels = async () => {
+    try {
+      setLoading(true);
+      setApiError(null);
+      
+      // Intentar obtener datos de la API
+      const response = await hotelService.getAllHotels();
+      const hotelData = response.data;
+      
+      setHotels(hotelData);
+      calculateStats(hotelData);
+    } catch (err) {
+      console.error('Error cargando hoteles desde API:', err);
+      setApiError('No se pudieron cargar los hoteles. Intente nuevamente.');
+      error('Error de conexión', 'No se pudieron cargar los datos de hoteles del servidor');
+      
+      // Fallback a datos locales si hay un error
+      const localHotels = hotelStorage.getHotels();
+      if (localHotels && localHotels.length > 0) {
+        setHotels(localHotels);
+        calculateStats(localHotels);
+        warning('Usando datos locales', 'Mostrando datos almacenados localmente');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const calculateStats = (hotelsData) => {
@@ -112,45 +139,86 @@ const Hotels = () => {
 
   const onSubmit = async (data) => {
     try {
+      setLoading(true);
       const hotelData = {
         ...data,
         bagInventory: parseInt(data.bagInventory),
         pricePerKg: parseFloat(data.pricePerKg)
+        // Ya no necesitamos añadir zone manualmente, ya viene en data del formulario
       };
+      
+      // Log para depuración
+      console.log('Datos enviados al backend:', hotelData);
 
       if (editingHotel) {
-        // Update existing hotel
-        const updateSuccess = hotelStorage.updateHotel(editingHotel.id, hotelData);
-        
-        if (updateSuccess) {
-          auditStorage.addAuditEntry({
-            action: 'HOTEL_UPDATED',
-            user: user.name,
-            details: `Hotel ${data.name} actualizado`
-          });
+        // Update existing hotel using API
+        try {
+          const response = await hotelService.updateHotel(editingHotel.id, hotelData);
+          
+          if (response.success) {
+            // Registrar en el log de auditoría
+            auditStorage.addAuditEntry({
+              action: 'HOTEL_UPDATED',
+              user: user.name,
+              details: `Hotel ${data.name} actualizado`
+            });
 
-          success('Hotel Actualizado', `${data.name} ha sido actualizado correctamente`);
-          setEditingHotel(null);
+            success('Hotel Actualizado', `${data.name} ha sido actualizado correctamente`);
+            setEditingHotel(null);
+          }
+        } catch (apiError) {
+          console.error('Error actualizando hotel en API:', apiError);
+          error('Error', apiError.message || 'No se pudo actualizar el hotel');
+          
+          // Fallback a actualización local
+          const updateSuccess = hotelStorage.updateHotel(editingHotel.id, hotelData);
+          
+          if (updateSuccess) {
+            warning('Guardado localmente', 'El hotel se ha actualizado solo localmente');
+            auditStorage.addAuditEntry({
+              action: 'HOTEL_UPDATED_LOCALLY',
+              user: user.name,
+              details: `Hotel ${data.name} actualizado localmente (sin conexión)`
+            });
+          }
         }
       } else {
-        // Create new hotel
-        const newHotel = {
-          id: generateId(),
-          ...hotelData
-        };
+        // Create new hotel using API
+        try {
+          const response = await hotelService.createHotel(hotelData);
+          
+          if (response.success) {
+            // Registrar en el log de auditoría
+            auditStorage.addAuditEntry({
+              action: 'HOTEL_CREATED',
+              user: user.name,
+              details: `Nuevo hotel ${data.name} creado`
+            });
 
-        const hotels = hotelStorage.getHotels();
-        hotels.push(newHotel);
-        const saveResult = hotelStorage.setHotels(hotels);
+            success('Hotel Creado', `${data.name} ha sido registrado exitosamente`);
+          }
+        } catch (apiError) {
+          console.error('Error creando hotel en API:', apiError);
+          error('Error', apiError.message || 'No se pudo crear el hotel');
+          
+          // Fallback a creación local
+          const newHotel = {
+            id: generateId(),
+            ...hotelData
+          };
 
-        if (saveResult) {
-          auditStorage.addAuditEntry({
-            action: 'HOTEL_CREATED',
-            user: user.name,
-            details: `Nuevo hotel ${data.name} creado`
-          });
+          const hotels = hotelStorage.getHotels();
+          hotels.push(newHotel);
+          const saveResult = hotelStorage.setHotels(hotels);
 
-          success('Hotel Creado', `${data.name} ha sido registrado exitosamente`);
+          if (saveResult) {
+            warning('Guardado localmente', 'El hotel se ha creado solo localmente');
+            auditStorage.addAuditEntry({
+              action: 'HOTEL_CREATED_LOCALLY',
+              user: user.name,
+              details: `Nuevo hotel ${data.name} creado localmente (sin conexión)`
+            });
+          }
         }
       }
 
@@ -160,6 +228,8 @@ const Hotels = () => {
     } catch (err) {
       console.error('Error saving hotel:', err);
       error('Error', 'No se pudo guardar el hotel');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -172,25 +242,40 @@ const Hotels = () => {
     setValue('email', hotel.email);
     setValue('bagInventory', hotel.bagInventory);
     setValue('pricePerKg', hotel.pricePerKg);
+    // Establecer la zona si existe, o usar SUR como valor predeterminado
+    setValue('zone', hotel.zone || 'SUR');
     setShowForm(true);
   };
 
-  const handleDelete = (hotel) => {
+  const handleDelete = async (hotel) => {
     if (window.confirm(`¿Estás seguro de eliminar el hotel ${hotel.name}?`)) {
-      const hotels = hotelStorage.getHotels();
-      const updatedHotels = hotels.filter(h => h.id !== hotel.id);
-      
-      const success = hotelStorage.setHotels(updatedHotels);
-      
-      if (success) {
-        auditStorage.addAuditEntry({
-          action: 'HOTEL_DELETED',
-          user: user.name,
-          details: `Hotel ${hotel.name} eliminado`
-        });
+      try {
+        setLoading(true);
+        
+        // Implementar cuando el backend tenga el endpoint para eliminar hoteles
+        // const response = await hotelService.deleteHotel(hotel.id);
+        
+        // Mientras tanto, usar almacenamiento local
+        const hotels = hotelStorage.getHotels();
+        const updatedHotels = hotels.filter(h => h.id !== hotel.id);
+        
+        const success = hotelStorage.setHotels(updatedHotels);
+        
+        if (success) {
+          auditStorage.addAuditEntry({
+            action: 'HOTEL_DELETED',
+            user: user.name,
+            details: `Hotel ${hotel.name} eliminado`
+          });
 
-        warning('Hotel Eliminado', `${hotel.name} ha sido eliminado`);
-        loadHotels();
+          warning('Hotel Eliminado', `${hotel.name} ha sido eliminado`);
+          loadHotels();
+        }
+      } catch (err) {
+        console.error('Error eliminando hotel:', err);
+        error('Error', 'No se pudo eliminar el hotel');
+      } finally {
+        setLoading(false);
       }
     }
   };
@@ -200,6 +285,7 @@ const Hotels = () => {
     setEditingHotel(null);
     reset();
   };
+
 
   const HotelDetailModal = ({ hotel, onClose }) => {
     if (!hotel) return null;
@@ -361,10 +447,21 @@ const Hotels = () => {
             Administrar hoteles y clientes
           </p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Hotel
-        </Button>
+        <div className="flex items-center space-x-2">
+          {!loading && (
+            <button
+              onClick={loadHotels}
+              className="p-2 rounded-full hover:bg-gray-100"
+              title="Actualizar datos"
+            >
+              <RefreshCw className="h-5 w-5 text-gray-600" />
+            </button>
+          )}
+          <Button onClick={() => setShowForm(true)} disabled={loading}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Hotel
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -437,19 +534,46 @@ const Hotels = () => {
           <Card.Content>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Input
-                  label="Nombre del Hotel"
-                  {...register('name', {
-                    required: 'El nombre es requerido',
-                    minLength: {
-                      value: 2,
-                      message: 'El nombre debe tener al menos 2 caracteres'
-                    }
-                  })}
-                  error={errors.name?.message}
-                  placeholder="Ej: Hotel Los Delfines"
-                  required
-                />
+                <div className="md:col-span-1">
+                  <Input
+                    label="Nombre del Hotel"
+                    {...register('name', {
+                      required: 'El nombre es requerido',
+                      minLength: {
+                        value: 2,
+                        message: 'El nombre debe tener al menos 2 caracteres'
+                      }
+                    })}
+                    error={errors.name?.message}
+                    placeholder="Ej: Hotel Los Delfines"
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Zona <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center">
+                    <MapPin className="h-4 w-4 text-gray-400 mr-2" />
+                    <select
+                      {...register('zone', {
+                        required: 'La zona es requerida'
+                      })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                      defaultValue="SUR"
+                    >
+                      <option value="NORTE">Norte</option>
+                      <option value="SUR">Sur</option>
+                      <option value="CENTRO">Centro</option>
+                      <option value="ESTE">Este</option>
+                      <option value="OESTE">Oeste</option>
+                    </select>
+                  </div>
+                  {errors.zone && (
+                    <p className="mt-1 text-sm text-red-600">{errors.zone.message}</p>
+                  )}
+                </div>
 
                 <div className="md:col-span-2">
                   <Input
@@ -556,8 +680,39 @@ const Hotels = () => {
         </Card>
       )}
 
+      {/* Loading and Error States */}
+      {loading && (
+        <div className="flex justify-center py-8">
+          <div className="flex items-center space-x-2">
+            <Loader className="h-6 w-6 text-blue-500 animate-spin" />
+            <span className="text-gray-600">Cargando hoteles...</span>
+          </div>
+        </div>
+      )}
+      
+      {apiError && !loading && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium">{apiError}</p>
+              <button 
+                onClick={loadHotels} 
+                className="text-sm font-medium underline mt-1 text-red-600 hover:text-red-800"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hotels Grid */}
-      {hotels.length === 0 ? (
+      {!loading && hotels.length === 0 ? (
         <Card>
           <Card.Content className="p-12 text-center">
             <Building className="h-16 w-16 text-gray-300 mx-auto mb-4" />

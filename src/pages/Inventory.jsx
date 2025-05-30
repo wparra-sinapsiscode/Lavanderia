@@ -5,22 +5,46 @@ import { hotelStorage, auditStorage } from '../utils/storage';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { Package, Plus, Minus, AlertTriangle, Building } from 'lucide-react';
+import { Package, Plus, Minus, AlertTriangle, Building, Loader, RefreshCw } from 'lucide-react';
+import hotelService from '../services/hotel.service';
 
 const Inventory = () => {
   const { user, isAdmin } = useAuth();
-  const { success, warning } = useNotifications();
+  const { success, warning, error } = useNotifications();
   const [hotels, setHotels] = useState([]);
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState(null);
 
   useEffect(() => {
     loadInventoryData();
   }, []);
 
-  const loadInventoryData = () => {
-    const hotelData = hotelStorage.getHotels();
-    setHotels(hotelData);
+  const loadInventoryData = async () => {
+    setLoading(true);
+    setApiError(null);
+    
+    try {
+      // Intentar obtener datos de la API
+      const response = await hotelService.getAllHotels();
+      if (response && response.data) {
+        setHotels(response.data);
+      } else {
+        throw new Error('Respuesta incompleta de la API');
+      }
+    } catch (err) {
+      console.error('Error cargando datos de inventario:', err);
+      setApiError('No se pudieron cargar los datos de inventario del servidor');
+      
+      // Fallback a datos locales
+      const hotelData = hotelStorage.getHotels();
+      if (hotelData && hotelData.length > 0) {
+        setHotels(hotelData);
+        warning('Usando datos locales', 'Los datos de inventario se están cargando desde el almacenamiento local');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateBagInventory = async (hotelId, operation, quantity = 1) => {
@@ -33,37 +57,74 @@ const Inventory = () => {
       let newInventory = hotel.bagInventory;
       
       if (operation === 'add') {
-        newInventory += quantity;
+        newInventory += parseInt(quantity);
       } else if (operation === 'subtract') {
-        newInventory = Math.max(0, newInventory - quantity);
+        newInventory = Math.max(0, newInventory - parseInt(quantity));
       }
 
-      // Update hotel inventory
-      const updateResult = hotelStorage.updateHotel(hotelId, { bagInventory: newInventory });
-      
-      if (updateResult) {
-        // Update local state
-        setHotels(prev => prev.map(h => 
-          h.id === hotelId ? { ...h, bagInventory: newInventory } : h
-        ));
-
-        // Add audit log
-        auditStorage.addAuditEntry({
-          action: 'INVENTORY_UPDATE',
-          user: user.name,
-          details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${quantity} bolsas del inventario de ${hotel.name}. Nuevo total: ${newInventory}`
-        });
-
-        // Only show warning if inventory is critically low (less than 10)
-        if (newInventory < 10) {
+      try {
+        // Intentar actualizar a través de la API
+        const inventoryData = {
+          bagInventory: newInventory
+        };
+        
+        const response = await hotelService.updateHotel(hotelId, inventoryData);
+        
+        if (response && response.success) {
+          // Update local state
+          setHotels(prev => prev.map(h => 
+            h.id === hotelId ? { ...h, bagInventory: newInventory } : h
+          ));
+          
+          // Add audit log
+          auditStorage.addAuditEntry({
+            action: 'INVENTORY_UPDATE',
+            user: user.name,
+            details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${quantity} bolsas del inventario de ${hotel.name}. Nuevo total: ${newInventory}`
+          });
+          
+          success(
+            'Inventario Actualizado',
+            `Inventario de ${hotel.name} actualizado correctamente`
+          );
+          
+          // Only show warning if inventory is critically low (less than 10)
+          if (newInventory < 10) {
+            warning(
+              'Inventario Crítico',
+              `${hotel.name} tiene solo ${newInventory} bolsas disponibles`
+            );
+          }
+        }
+      } catch (apiError) {
+        console.error('Error actualizando inventario en API:', apiError);
+        error('Error', 'No se pudo actualizar el inventario en el servidor');
+        
+        // Fallback a actualización local
+        const updateResult = hotelStorage.updateHotel(hotelId, { bagInventory: newInventory });
+        
+        if (updateResult) {
+          // Update local state
+          setHotels(prev => prev.map(h => 
+            h.id === hotelId ? { ...h, bagInventory: newInventory } : h
+          ));
+          
+          // Add audit log
+          auditStorage.addAuditEntry({
+            action: 'INVENTORY_UPDATE_LOCAL',
+            user: user.name,
+            details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${quantity} bolsas del inventario de ${hotel.name} (local). Nuevo total: ${newInventory}`
+          });
+          
           warning(
-            'Inventario Crítico',
-            `${hotel.name} tiene solo ${newInventory} bolsas disponibles`
+            'Actualización Local',
+            'El inventario se actualizó localmente, pero no se pudo sincronizar con el servidor'
           );
         }
       }
     } catch (error) {
       console.error('Error updating inventory:', error);
+      error('Error', 'Ocurrió un error al actualizar el inventario');
     } finally {
       setLoading(false);
     }
@@ -142,7 +203,41 @@ const Inventory = () => {
             Control de bolsas disponibles por hotel
           </p>
         </div>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={loadInventoryData}
+            className="p-2 rounded-full hover:bg-gray-100"
+            title="Actualizar datos"
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader className="h-5 w-5 text-gray-600 animate-spin" />
+            ) : (
+              <RefreshCw className="h-5 w-5 text-gray-600" />
+            )}
+          </button>
+        </div>
       </div>
+      
+      {/* Error message */}
+      {apiError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium">{apiError}</p>
+              <button 
+                onClick={loadInventoryData} 
+                className="text-sm font-medium underline mt-1 text-red-600 hover:text-red-800"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Inventory Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -152,9 +247,15 @@ const Inventory = () => {
               <Package className="h-8 w-8 text-blue-600" />
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Bolsas</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {hotels.reduce((sum, h) => sum + h.bagInventory, 0)}
-                </p>
+                {loading ? (
+                  <div className="flex items-center h-9">
+                    <Loader className="h-5 w-5 text-gray-400 animate-spin" />
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900">
+                    {hotels.reduce((sum, h) => sum + (parseInt(h.bagInventory) || 0), 0)}
+                  </p>
+                )}
               </div>
             </div>
           </Card.Content>
@@ -166,7 +267,13 @@ const Inventory = () => {
               <Building className="h-8 w-8 text-green-600" />
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Hoteles</p>
-                <p className="text-2xl font-bold text-gray-900">{hotels.length}</p>
+                {loading ? (
+                  <div className="flex items-center h-9">
+                    <Loader className="h-5 w-5 text-gray-400 animate-spin" />
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900">{hotels.length}</p>
+                )}
               </div>
             </div>
           </Card.Content>
@@ -178,9 +285,15 @@ const Inventory = () => {
               <AlertTriangle className="h-8 w-8 text-yellow-600" />
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Stock Bajo</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {hotels.filter(h => h.bagInventory < 20).length}
-                </p>
+                {loading ? (
+                  <div className="flex items-center h-9">
+                    <Loader className="h-5 w-5 text-gray-400 animate-spin" />
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900">
+                    {hotels.filter(h => parseInt(h.bagInventory) > 0 && parseInt(h.bagInventory) < 20).length}
+                  </p>
+                )}
               </div>
             </div>
           </Card.Content>
@@ -192,9 +305,15 @@ const Inventory = () => {
               <Package className="h-8 w-8 text-red-600" />
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Sin Stock</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {hotels.filter(h => h.bagInventory === 0).length}
-                </p>
+                {loading ? (
+                  <div className="flex items-center h-9">
+                    <Loader className="h-5 w-5 text-gray-400 animate-spin" />
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900">
+                    {hotels.filter(h => parseInt(h.bagInventory) === 0).length}
+                  </p>
+                )}
               </div>
             </div>
           </Card.Content>
@@ -223,7 +342,7 @@ const Inventory = () => {
                     Estado
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Habitaciones
+                    Zona
                   </th>
                   {isAdmin && (
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -233,8 +352,29 @@ const Inventory = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {hotels.map((hotel) => {
-                  const status = getInventoryStatus(hotel.bagInventory);
+                {loading && (
+                  <tr>
+                    <td colSpan={isAdmin ? 5 : 4} className="px-6 py-4 text-center">
+                      <div className="flex justify-center items-center space-x-2">
+                        <Loader className="h-5 w-5 text-blue-500 animate-spin" />
+                        <span className="text-gray-500">Cargando datos de inventario...</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                
+                {!loading && hotels.length === 0 && (
+                  <tr>
+                    <td colSpan={isAdmin ? 5 : 4} className="px-6 py-4 text-center">
+                      <div className="text-gray-500">
+                        No hay datos de hoteles disponibles
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                
+                {!loading && hotels.map((hotel) => {
+                  const status = getInventoryStatus(parseInt(hotel.bagInventory) || 0);
                   return (
                     <tr key={hotel.id}>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -258,7 +398,7 @@ const Inventory = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {hotel.rooms}
+                        {hotel.zone || 'No especificada'}
                       </td>
                       {isAdmin && (
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
@@ -274,7 +414,7 @@ const Inventory = () => {
                             size="sm"
                             variant="outline"
                             onClick={() => updateBagInventory(hotel.id, 'subtract', 1)}
-                            disabled={loading || hotel.bagInventory === 0}
+                            disabled={loading || parseInt(hotel.bagInventory) === 0}
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
