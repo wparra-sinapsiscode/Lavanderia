@@ -387,45 +387,50 @@ class GuestService {
   
   /**
    * Validate hotel inventory for bag count
-   * @param {number} hotelId - Hotel ID
+   * @param {string} hotelId - Hotel ID
    * @param {number} bagCount - Number of bags to validate
    * @returns {Promise<Object>} Validation result
    */
   async validateInventory(hotelId, bagCount) {
     try {
-      const response = await api.get('/guests/validate-inventory', {
-        params: { hotelId, bagCount }
+      // Asegurar que el hotelId sea un string
+      const hotelIdStr = String(hotelId).trim();
+      
+      // Asegurar que bagCount sea un número entero positivo
+      const bagCountInt = parseInt(bagCount, 10);
+      
+      if (isNaN(bagCountInt) || bagCountInt <= 0) {
+        throw new Error('La cantidad de bolsas debe ser un número entero positivo');
+      }
+      
+      console.log('Validando inventario:', {
+        hotelId: hotelIdStr,
+        bagCount: bagCountInt
       });
+      
+      const response = await api.get('/guests/validate-inventory', {
+        params: { 
+          hotelId: hotelIdStr, 
+          bagCount: bagCountInt 
+        }
+      });
+      
+      console.log('Respuesta de validación de inventario:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Validate inventory error:', error);
+      console.error('Error de validación de inventario:', error);
       
-      // Fallback to local storage
-      try {
-        const hotels = hotelStorage.getHotels() || [];
-        const hotel = hotels.find(h => h.id === hotelId);
-        
-        if (!hotel) {
-          throw new Error('Hotel not found in local storage');
-        }
-        
-        const isValid = hotel.bagInventory >= bagCount;
-        
-        return {
-          success: true,
-          message: isValid ? 
-            'Inventory validated successfully (local storage)' : 
-            'Not enough bags in inventory (local storage)',
-          data: {
-            isValid,
-            available: hotel.bagInventory,
-            required: bagCount
-          }
-        };
-      } catch (localError) {
-        console.error('Local storage validate inventory error:', localError);
-        throw localError;
+      if (error.response && error.response.data) {
+        console.error('Detalles del error:', error.response.data);
+        return error.response.data;
       }
+      
+      // Crear una respuesta de error estándar
+      return {
+        success: false,
+        message: error.message || 'Error al validar inventario',
+        data: null
+      };
     }
   }
   
@@ -436,74 +441,47 @@ class GuestService {
    */
   async registerGuestWithService(guestData) {
     try {
-      const response = await api.post('/guests/register-with-service', guestData);
+      // Normalizar y validar datos antes de enviar
+      const normalizedData = {
+        // Convertir string a mayúsculas si es necesario
+        guestName: String(guestData.guestName || '').trim(),
+        roomNumber: String(guestData.roomNumber || '').trim(),
+        hotelId: String(guestData.hotelId || '').trim(),
+        // Convertir a números
+        bagCount: parseInt(guestData.bagCount, 10),
+        // Otros campos
+        observations: String(guestData.observations || '').trim(),
+        specialInstructions: String(guestData.specialInstructions || '').trim(),
+        estimatedPickupDate: guestData.estimatedPickupDate,
+        // Asegurar que el repartidorId sea un string
+        repartidorId: guestData.repartidorId ? String(guestData.repartidorId).trim() : null,
+        // Convertir priority a mayúsculas para que coincida con las constantes del backend
+        priority: String(guestData.priority || 'NORMAL').toUpperCase(),
+        pickupTimeSlot: String(guestData.pickupTimeSlot || '').trim()
+      };
+      
+      // Registro de diagnóstico
+      console.log('Enviando datos normalizados al backend:', normalizedData);
+      
+      const response = await api.post('/guests/register', normalizedData);
+      console.log('Respuesta de registro con servicio:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Register guest with service error:', error);
+      console.error('Error al registrar huésped con servicio:', error);
       
-      // Fallback to local storage
-      try {
-        // First create guest
-        const guestId = Date.now().toString();
-        const newGuest = {
-          id: guestId,
-          name: guestData.guestName,
-          roomNumber: guestData.roomNumber,
-          hotelId: guestData.hotelId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        const guests = guestStorage.getGuests() || [];
-        guests.push(newGuest);
-        guestStorage.setGuests(guests);
-        
-        // Then create service
-        const serviceId = (Date.now() + 1).toString();
-        const newService = {
-          id: serviceId,
-          guestId,
-          guestName: guestData.guestName,
-          roomNumber: guestData.roomNumber,
-          hotelId: guestData.hotelId,
-          bagCount: guestData.bagCount,
-          observations: guestData.observations,
-          specialInstructions: guestData.specialInstructions,
-          estimatedPickupDate: guestData.estimatedPickupDate || new Date().toISOString(),
-          status: 'PENDING_PICKUP',
-          priority: guestData.priority || 'NORMAL',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        const services = serviceStorage.getServices() || [];
-        services.push(newService);
-        serviceStorage.setServices(services);
-        
-        // Update hotel inventory
-        const hotels = hotelStorage.getHotels() || [];
-        const hotelIndex = hotels.findIndex(h => h.id === guestData.hotelId);
-        
-        if (hotelIndex !== -1) {
-          hotels[hotelIndex] = {
-            ...hotels[hotelIndex],
-            bagInventory: hotels[hotelIndex].bagInventory - guestData.bagCount
-          };
-          hotelStorage.setHotels(hotels);
-        }
-        
-        return {
-          success: true,
-          message: 'Guest and service registered successfully (local storage)',
-          data: {
-            guest: newGuest,
-            service: newService
-          }
-        };
-      } catch (localError) {
-        console.error('Local storage guest+service registration error:', localError);
-        throw localError;
+      // Registrar detalles del error
+      if (error.response && error.response.data) {
+        console.error('Detalles del error del servidor:', error.response.data);
+        return error.response.data;
       }
+      
+      // Crear una respuesta de error estándar
+      return {
+        success: false,
+        message: error.message || 'Error al registrar huésped con servicio',
+        error: error.toString(),
+        data: null
+      };
     }
   }
   

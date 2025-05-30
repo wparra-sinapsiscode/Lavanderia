@@ -105,16 +105,43 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       }
 
       // Validar inventario mediante API
-      const inventoryResponse = await guestService.validateInventory(
-        selectedHotel.id, 
-        parseInt(data.bagCount)
-      );
-      
-      const inventoryValid = inventoryResponse.success && inventoryResponse.data?.valid;
-      if (!inventoryValid) {
+      // Asegurar que bagCount sea un número entero válido
+      const bagCount = parseInt(data.bagCount, 10);
+      if (isNaN(bagCount) || bagCount <= 0) {
         showNotification({
           type: 'error',
-          message: inventoryResponse.data?.message || `Inventario insuficiente para ${data.bagCount} bolsas`
+          message: 'La cantidad de bolsas debe ser un número válido mayor a 0'
+        });
+        return;
+      }
+      
+      // Asegurar que el hotelId sea un string
+      const hotelId = String(selectedHotel.id).trim();
+      console.log('Datos para validación de inventario:', {
+        hotelId: hotelId,
+        bagCount: bagCount,
+        hotelSeleccionado: selectedHotel
+      });
+      
+      const inventoryResponse = await guestService.validateInventory(hotelId, bagCount);
+      console.log('Respuesta completa de validación:', inventoryResponse);
+      
+      // Verificar la respuesta correctamente
+      if (!inventoryResponse.success) {
+        showNotification({
+          type: 'error',
+          message: inventoryResponse.message || `Error al validar inventario: ${inventoryResponse.error || 'Error desconocido'}`
+        });
+        return;
+      }
+      
+      // Verificar que hay suficiente inventario
+      const hasEnoughInventory = inventoryResponse.data?.inventory?.hasEnoughInventory;
+      if (!hasEnoughInventory) {
+        const available = inventoryResponse.data?.inventory?.available || 0;
+        showNotification({
+          type: 'error',
+          message: `Inventario insuficiente. Disponible: ${available} bolsas, Solicitado: ${bagCount} bolsas`
         });
         return;
       }
@@ -146,21 +173,34 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       const serviceData = {
         guestName: data.guestName,
         roomNumber: 'N/A', // Recogida en hotel, sin habitación específica
-        hotelId: selectedHotel.id,
+        hotelId: String(selectedHotel.id).trim(),
         bagCount: parseInt(data.bagCount),
         observations: data.observations || '',
-        priority: finalPriority,
+        // Asegurar que la prioridad esté en mayúsculas para el backend
+        priority: finalPriority.toUpperCase(),
         estimatedPickupDate: estimatedPickupDate.toISOString(),
-        repartidorId: assignedRepartidor.id,
+        repartidorId: String(assignedRepartidor.id).trim(),
         pickupTimeSlot: '9:00 - 11:00', // Horario fijo para evitar datos aleatorios
         specialInstructions: ''
       };
 
+      // Log para diagnóstico
+      console.log('Datos a enviar para registro de servicio:', serviceData);
+
       // Crear servicio mediante API
       const guestResponse = await guestService.registerGuestWithService(serviceData);
+      console.log('Respuesta completa de registro de servicio:', guestResponse);
       
       if (!guestResponse.success) {
-        throw new Error(guestResponse.message || 'Error al registrar el servicio');
+        const errorMsg = guestResponse.message || 
+                        (guestResponse.error ? `Error: ${guestResponse.error}` : 
+                        'Error al registrar el servicio');
+        throw new Error(errorMsg);
+      }
+      
+      // Verificar que se recibieron datos válidos
+      if (!guestResponse.data || !guestResponse.data.service) {
+        throw new Error('No se recibieron datos válidos del servicio');
       }
       
       const newService = guestResponse.data.service;
