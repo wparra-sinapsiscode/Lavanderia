@@ -9,13 +9,24 @@ export const generateId = () => {
 };
 
 export const formatDate = (date) => {
-  return new Date(date).toLocaleDateString('es-PE', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  if (!date) return 'Sin fecha';
+  
+  try {
+    const dateObj = new Date(date);
+    // Verificar si la fecha es válida
+    if (isNaN(dateObj.getTime())) return 'Fecha inválida';
+    
+    return dateObj.toLocaleDateString('es-PE', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    console.error('Error al formatear fecha:', error);
+    return 'Fecha inválida';
+  }
 };
 
 export const formatCurrency = (amount) => {

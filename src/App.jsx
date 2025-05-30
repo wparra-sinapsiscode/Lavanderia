@@ -18,7 +18,7 @@ import Users from './pages/Users';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Finance from './pages/Finance';
-import initializeModernData from './utils/seedData';
+// Mock data import removed
 import { cleanAllLocalData } from './utils/cleanData';
 
 // Protected Route Component
@@ -41,64 +41,20 @@ const AppContent = () => {
   const { isAuthenticated } = useAuth();
 
   const [dataInitialized, setDataInitialized] = useState(false);
-  // Desactivar datos simulados por defecto
-  const [useSimulatedData, setUseSimulatedData] = useState(false);
   
-  // Establecer flag para desactivar datos simulados
+  // Permanently disable demo data
   useEffect(() => {
     localStorage.setItem('fumy_limp_disable_demo', 'true');
   }, []);
   
-  // Effect to listen for changes to the simulated data setting
-  useEffect(() => {
-    // Listen for localStorage changes (for cross-tab communication)
-    const handleStorageChange = (e) => {
-      if (e.key === 'fumy_limp_disable_demo') {
-        setUseSimulatedData(e.newValue !== 'true');
-        setDataInitialized(false); // Reset to trigger re-initialization
-      }
-    };
-    
-    // Listen for custom events (for direct component communication)
-    const handleDemoDataChange = (e) => {
-      console.log('📢 Demo data change event received:', e.detail);
-      setUseSimulatedData(e.detail.enabled);
-      setDataInitialized(false); // Reset to trigger re-initialization
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('demo_data_changed', handleDemoDataChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('demo_data_changed', handleDemoDataChange);
-    };
-  }, []);
+  // Simulated data event handling removed
 
+  // Initialize app state
   useEffect(() => {
-    // Solo inicializa datos si está habilitado y no se han inicializado previamente
-    if (useSimulatedData && !dataInitialized) {
-      console.log('📊 Inicializando datos simulados...');
-      // Verificar si hay datos en localStorage antes de inicializar
-      const services = JSON.parse(localStorage.getItem(APP_CONFIG.STORAGE_KEYS.SERVICES) || 'null');
-      
-      if (!services || services.length === 0) {
-        console.log('🔄 No hay datos de servicios, inicializando datos simulados...');
-        initializeModernData();
-      } else {
-        console.log('📋 Datos existentes encontrados, omitiendo inicialización');
-      }
-      
-      setDataInitialized(true);
-    }
-    
-    // Si está deshabilitado y hay datos en localStorage, los limpiamos
-    if (!useSimulatedData && !dataInitialized) {
-      console.log('🧹 Limpiando datos simulados del localStorage...');
-      cleanAllLocalData();
-      setDataInitialized(true);
-    }
-  }, [useSimulatedData, dataInitialized]);
+    // Clear any existing mock data
+    cleanAllLocalData();
+    setDataInitialized(true);
+  }, []);
 
   return (
     <div className="App">

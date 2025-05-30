@@ -59,7 +59,15 @@ class HotelService {
    */
   async updateHotel(id, hotelData) {
     try {
-      const response = await api.put(`/hotels/${id}`, hotelData);
+      console.log(`Enviando actualización de hotel a la API: Hotel ${id}, Datos:`, hotelData);
+      
+      // Asegurar que bagInventory sea un número si está presente
+      const dataToSend = { ...hotelData };
+      if (dataToSend.bagInventory !== undefined) {
+        dataToSend.bagInventory = parseInt(dataToSend.bagInventory) || 0;
+      }
+      
+      const response = await api.put(`/hotels/${id}`, dataToSend);
       return response.data;
     } catch (error) {
       console.error('Update hotel error:', error);
@@ -71,13 +79,21 @@ class HotelService {
    * Update hotel bag inventory
    * @param {number} id - Hotel ID
    * @param {Object} inventoryData - Inventory data
-   * @param {number} inventoryData.quantity - Quantity to add (positive) or remove (negative)
-   * @param {string} inventoryData.notes - Notes about the inventory change
+   * @param {number} inventoryData.bagInventory - New total inventory amount
+   * @param {string} inventoryData.notes - Notes about the inventory change (optional)
    * @returns {Promise<Object>} Updated inventory
    */
   async updateInventory(id, inventoryData) {
     try {
-      const response = await api.put(`/hotels/${id}/inventory`, inventoryData);
+      console.log(`Enviando actualización de inventario a la API: Hotel ${id}, Datos:`, inventoryData);
+      
+      // Asegurar que bagInventory sea un número
+      const dataToSend = {
+        ...inventoryData,
+        bagInventory: parseInt(inventoryData.bagInventory) || 0
+      };
+      
+      const response = await api.put(`/hotels/${id}/inventory`, dataToSend);
       return response.data;
     } catch (error) {
       console.error('Update inventory error:', error);

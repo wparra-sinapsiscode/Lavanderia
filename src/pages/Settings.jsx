@@ -3,8 +3,8 @@ import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
 import { storage, serviceStorage } from '../utils/storage';
 import { APP_CONFIG } from '../constants';
-import initializeModernData from '../utils/seedData';
-import { cleanAllLocalData, disableAutoDemoData, enableAutoDemoData } from '../utils/cleanData';
+// Mock data import removed
+import { cleanAllLocalData } from '../utils/cleanData';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -39,9 +39,7 @@ const Settings = () => {
     users: 0
   });
   // Estado para controlar si los datos simulados están habilitados
-  const [demoDataEnabled, setDemoDataEnabled] = useState(
-    localStorage.getItem('fumy_limp_disable_demo') !== 'true'
-  );
+  // Demo data state removed
 
   const [settings, setSettings] = useState({
     company: {
@@ -413,14 +411,7 @@ const Settings = () => {
                         </label>
                       </div>
                       
-                      <Button
-                        variant="outline"
-                        onClick={generateMixedServices}
-                        className="w-full text-blue-600 hover:text-blue-700 border-blue-300 hover:border-blue-400"
-                      >
-                        <Database className="h-4 w-4 mr-2" />
-                        Generar Servicios Mixtos
-                      </Button>
+                      {/* Generate mixed services button removed */}
                       
                       <Button
                         variant="outline"
@@ -709,115 +700,9 @@ const Settings = () => {
                 </Card.Content>
               </Card>
               
-              {/* Gestión de Datos Simulados - Nueva sección */}
-              <Card>
-                <Card.Header>
-                  <h3 className="text-lg font-semibold text-gray-900">Gestión de Datos Simulados</h3>
-                  <p className="text-sm text-gray-500 mt-1">Controla los datos de demostración del sistema</p>
-                </Card.Header>
-                <Card.Content className="space-y-6">
-                  {/* Control de Datos de Demostración */}
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 className="font-medium text-blue-800 mb-2 flex items-center">
-                      {demoDataEnabled ? <ToggleRight className="h-5 w-5 text-blue-600 mr-2" /> : <ToggleLeft className="h-5 w-5 text-gray-600 mr-2" />}
-                      Datos de Demostración: {demoDataEnabled ? 'Activados' : 'Desactivados'}
-                    </h4>
-                    <p className="text-sm text-blue-700 mb-3">
-                      {demoDataEnabled
-                        ? 'El sistema está utilizando datos simulados para demostración. Estos datos se cargan automáticamente al iniciar.'
-                        : 'Los datos simulados están desactivados. El sistema iniciará sin datos precargados.'}
-                    </p>
-                    <Button
-                      variant="outline"
-                      className={demoDataEnabled ? 'bg-white text-blue-600 border-blue-300' : 'bg-blue-50 text-blue-700 border-blue-300'}
-                      onClick={toggleDemoData}
-                    >
-                      {demoDataEnabled ? (
-                        <>
-                          <FileX className="h-4 w-4 mr-2" />
-                          Desactivar Datos de Demostración
-                        </>
-                      ) : (
-                        <>
-                          <Database className="h-4 w-4 mr-2" />
-                          Activar Datos de Demostración
-                        </>
-                      )}
-                    </Button>
-                  </div>
+              {/* Demo data management section removed */}
                   
-                  {/* Estadísticas de Datos */}
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Datos en el Sistema</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                      {[
-                        { key: 'hotels', label: 'Hoteles' },
-                        { key: 'services', label: 'Servicios' },
-                        { key: 'bagLabels', label: 'Rótulos' },
-                        { key: 'transactions', label: 'Transacciones' },
-                        { key: 'users', label: 'Usuarios' }
-                      ].map((item) => (
-                        <div key={item.key} className="bg-white p-3 rounded-lg border border-gray-200 text-center">
-                          <p className="text-sm text-gray-500">{item.label}</p>
-                          <p className="text-2xl font-semibold text-gray-700">{dataStats[item.key]}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {/* Acciones de Gestión de Datos */}
-                  <div className="space-y-4">
-                    <h4 className="font-medium text-gray-900 mb-3">Acciones de Gestión</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <h5 className="font-medium text-gray-700 text-sm">Eliminar por Categoría</h5>
-                        <div className="space-y-2">
-                          {[
-                            { key: 'hotels', label: 'Hoteles' },
-                            { key: 'services', label: 'Servicios' },
-                            { key: 'bagLabels', label: 'Rótulos' },
-                            { key: 'transactions', label: 'Transacciones' },
-                            { key: 'guests', label: 'Huéspedes' }
-                          ].map((item) => (
-                            <Button 
-                              key={item.key}
-                              variant="outline" 
-                              className="w-full justify-start text-red-600 border-red-300 hover:border-red-400"
-                              onClick={() => cleanDataByCategory(item.key)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Limpiar {item.label}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <h5 className="font-medium text-gray-700 text-sm">Acciones Globales</h5>
-                        <div className="space-y-2">
-                          <Button
-                            variant="outline"
-                            className="w-full justify-start text-blue-600 border-blue-300 hover:border-blue-400"
-                            onClick={generateMixedServices}
-                          >
-                            <RefreshCcw className="h-4 w-4 mr-2" />
-                            Regenerar Todos los Datos
-                          </Button>
-                          
-                          <Button
-                            variant="outline"
-                            className="w-full justify-start text-red-600 border-red-300 hover:border-red-400"
-                            onClick={clearAllData}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Eliminar Todos los Datos
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card.Content>
-              </Card>
+              {/* Data statistics and management card removed */}
             </div>
           )}
         </div>

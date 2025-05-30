@@ -53,34 +53,89 @@ const Inventory = () => {
     try {
       const hotel = hotels.find(h => h.id === hotelId);
       if (!hotel) return;
-
-      let newInventory = hotel.bagInventory;
+      
+      // Asegurarse de que bagInventory sea un número
+      let currentInventory = parseInt(hotel.bagInventory) || 0;
+      let newInventory = currentInventory;
+      
+      // Convertir quantity a número para asegurar cálculo correcto
+      const numQuantity = parseInt(quantity) || 1;
+      
+      console.log(`Operación de inventario - Hotel: ${hotel.name}, Inventario actual: ${currentInventory}, Operación: ${operation}, Cantidad: ${numQuantity}`);
       
       if (operation === 'add') {
-        newInventory += parseInt(quantity);
+        newInventory += numQuantity;
+        console.log(`Agregar ${numQuantity} bolsas → Nuevo inventario: ${newInventory}`);
       } else if (operation === 'subtract') {
-        newInventory = Math.max(0, newInventory - parseInt(quantity));
+        // Asegurar que no quede negativo
+        newInventory = Math.max(0, currentInventory - numQuantity);
+        console.log(`Restar ${numQuantity} bolsas → Nuevo inventario: ${newInventory}`);
+        
+        // Si el inventario no cambió porque ya estaba en 0, notificar al usuario
+        if (newInventory === currentInventory && currentInventory === 0) {
+          warning(
+            'Inventario en cero',
+            `El inventario de ${hotel.name} ya está en cero, no se puede reducir más.`
+          );
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Si no hay cambio, no hacer nada
+      if (newInventory === currentInventory) {
+        setLoading(false);
+        return;
       }
 
       try {
-        // Intentar actualizar a través de la API
-        const inventoryData = {
-          bagInventory: newInventory
-        };
+        // El backend espera directamente el valor de bagInventory
+        console.log(`Actualizando inventario: Hotel ${hotelId}, Operación: ${operation}, Cantidad: ${numQuantity}, Nuevo total: ${newInventory}`);
         
-        const response = await hotelService.updateHotel(hotelId, inventoryData);
+        // Intentar usar el método específico de inventario
+        let response;
+        try {
+          // El método updateInventory espera directamente bagInventory, no quantity
+          response = await hotelService.updateInventory(hotelId, { 
+            bagInventory: newInventory,
+            notes: `${operation === 'add' ? 'Agregado' : 'Descontado'} ${numQuantity} manualmente por ${user.name}`
+          });
+          
+          console.log("Respuesta de updateInventory:", response);
+        } catch (inventoryMethodError) {
+          console.warn("Método updateInventory falló, intentando con updateHotel:", inventoryMethodError);
+          
+          // Intentar directamente con bagInventory en el método updateHotel
+          try {
+            response = await hotelService.updateHotel(hotelId, { 
+              bagInventory: newInventory 
+            });
+            console.log("Respuesta de updateHotel:", response);
+          } catch (hotelUpdateError) {
+            console.error("Método updateHotel también falló:", hotelUpdateError);
+            throw hotelUpdateError;
+          }
+        }
         
         if (response && response.success) {
-          // Update local state
-          setHotels(prev => prev.map(h => 
-            h.id === hotelId ? { ...h, bagInventory: newInventory } : h
-          ));
+          console.log("Actualización exitosa vía API:", response);
           
-          // Add audit log
+          console.log(`Actualizando estado de UI para hotel ${hotelId}, nuevo inventario: ${newInventory}`);
+          
+          // Actualizar el estado local inmediatamente para reflejar el cambio en la UI
+          setHotels(prevHotels => {
+            const updatedHotels = prevHotels.map(h => 
+              h.id === hotelId ? { ...h, bagInventory: newInventory } : h
+            );
+            console.log("Estado actualizado de hoteles:", updatedHotels);
+            return updatedHotels;
+          });
+          
+          // Agregar entrada de auditoría
           auditStorage.addAuditEntry({
             action: 'INVENTORY_UPDATE',
             user: user.name,
-            details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${quantity} bolsas del inventario de ${hotel.name}. Nuevo total: ${newInventory}`
+            details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${numQuantity} bolsas del inventario de ${hotel.name}. Nuevo total: ${newInventory}`
           });
           
           success(
@@ -88,38 +143,49 @@ const Inventory = () => {
             `Inventario de ${hotel.name} actualizado correctamente`
           );
           
-          // Only show warning if inventory is critically low (less than 10)
+          // Mostrar advertencia solo si el inventario es críticamente bajo (menos de 10)
           if (newInventory < 10) {
             warning(
               'Inventario Crítico',
               `${hotel.name} tiene solo ${newInventory} bolsas disponibles`
             );
           }
+        } else {
+          throw new Error("La respuesta de la API no indicó éxito");
         }
       } catch (apiError) {
         console.error('Error actualizando inventario en API:', apiError);
         error('Error', 'No se pudo actualizar el inventario en el servidor');
         
         // Fallback a actualización local
+        console.log("Intentando actualización local:", hotelId, { bagInventory: newInventory });
         const updateResult = hotelStorage.updateHotel(hotelId, { bagInventory: newInventory });
         
         if (updateResult) {
-          // Update local state
-          setHotels(prev => prev.map(h => 
-            h.id === hotelId ? { ...h, bagInventory: newInventory } : h
-          ));
+          console.log("Actualización local exitosa");
           
-          // Add audit log
+          // Actualizar explícitamente el estado local para reflejar el cambio en la UI
+          setHotels(prevHotels => {
+            const updatedHotels = prevHotels.map(h => 
+              h.id === hotelId ? { ...h, bagInventory: newInventory } : h
+            );
+            console.log("Estado de hoteles actualizado:", updatedHotels);
+            return updatedHotels;
+          });
+          
+          // Agregar entrada de auditoría
           auditStorage.addAuditEntry({
             action: 'INVENTORY_UPDATE_LOCAL',
             user: user.name,
-            details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${quantity} bolsas del inventario de ${hotel.name} (local). Nuevo total: ${newInventory}`
+            details: `${operation === 'add' ? 'Agregó' : 'Descontó'} ${numQuantity} bolsas del inventario de ${hotel.name} (local). Nuevo total: ${newInventory}`
           });
           
           warning(
             'Actualización Local',
             'El inventario se actualizó localmente, pero no se pudo sincronizar con el servidor'
           );
+        } else {
+          throw new Error("No se pudo actualizar el inventario localmente");
         }
       }
     } catch (error) {

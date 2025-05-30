@@ -48,35 +48,9 @@ export const cleanSpecificData = (keys = []) => {
   }
 };
 
-/**
- * Desactiva la inicialización automática de datos de demostración
- */
-export const disableAutoDemoData = () => {
-  localStorage.setItem('fumy_limp_disable_demo', 'true');
-  console.log('🚫 La inicialización automática de datos de demostración ha sido desactivada');
-  
-  // Dispatch a custom event to notify other components
-  window.dispatchEvent(new CustomEvent('demo_data_changed', { 
-    detail: { enabled: false }
-  }));
-};
-
-/**
- * Habilita la inicialización automática de datos de demostración
- */
-export const enableAutoDemoData = () => {
-  localStorage.removeItem('fumy_limp_disable_demo');
-  console.log('✅ La inicialización automática de datos de demostración ha sido habilitada');
-  
-  // Dispatch a custom event to notify other components
-  window.dispatchEvent(new CustomEvent('demo_data_changed', { 
-    detail: { enabled: true }
-  }));
-};
+// Demo data functions removed
 
 export default {
   cleanAllLocalData,
-  cleanSpecificData,
-  disableAutoDemoData,
-  enableAutoDemoData
+  cleanSpecificData
 };

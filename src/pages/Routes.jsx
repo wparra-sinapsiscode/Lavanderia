@@ -5,7 +5,7 @@ import { useNotifications } from '../store/NotificationContext';
 import { serviceStorage, hotelStorage, storage } from '../utils/storage';
 import { formatDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
-import initializeModernData, { generateAdditionalPendingPickups } from '../utils/seedData';
+// Mock data import removed
 import { APP_CONFIG } from '../constants';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -675,21 +675,7 @@ const Routes = () => {
             </Button>
           )}
           
-          {isAdmin && (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={resetDemoDataSafely}
-              className="text-red-600 border-red-600 hover:bg-red-50 px-2 py-1 text-sm leading-tight"
-            >
-              <div className="flex flex-col items-center">
-                <RotateCcw className="h-3 w-3 mb-0.5" />
-                <span className="text-center">
-                  Resetear<br />Demo
-                </span>
-              </div>
-            </Button>
-          )}
+          {/* Reset demo button removed */}
         </div>
       </div>
 

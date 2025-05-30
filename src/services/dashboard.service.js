@@ -12,13 +12,36 @@ class DashboardService {
    */
   async getDashboardSummary(timePeriod = 'month') {
     try {
+      console.log('Solicitando dashboard summary, timePeriod:', timePeriod);
       const response = await api.get('/dashboard/summary', {
         params: { timePeriod }
       });
+      
+      // Log detallado para depuración
+      console.log('Respuesta de dashboard summary:', JSON.stringify(response.data, null, 2));
+      
+      // Validar la estructura de la respuesta
+      if (!response.data || typeof response.data !== 'object') {
+        console.warn('Respuesta inválida en getDashboardSummary:', response);
+        // Devolver un objeto con estructura válida pero vacío
+        return {
+          success: false,
+          message: 'Respuesta inválida del servidor',
+          servicesByStatus: {},
+          totalServices: 0
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Get dashboard summary error:', error);
-      throw error;
+      // Devolver un objeto con estructura válida en lugar de propagar el error
+      return {
+        success: false,
+        message: error.message || 'Error al obtener resumen del dashboard',
+        servicesByStatus: {},
+        totalServices: 0
+      };
     }
   }
   
@@ -29,13 +52,36 @@ class DashboardService {
    */
   async getServiceStats(timePeriod = 'month') {
     try {
+      console.log('Solicitando service stats, timePeriod:', timePeriod);
       const response = await api.get('/dashboard/services-stats', {
         params: { timePeriod }
       });
+      
+      // Log detallado para depuración
+      console.log('Respuesta de service stats:', JSON.stringify(response.data, null, 2));
+      
+      // Validar la estructura de la respuesta
+      if (!response.data || typeof response.data !== 'object') {
+        console.warn('Respuesta inválida en getServiceStats:', response);
+        // Devolver un objeto con estructura válida pero vacío
+        return {
+          success: false,
+          message: 'Respuesta inválida del servidor',
+          dailyServices: [],
+          avgServiceValue: 0
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Get service stats error:', error);
-      throw error;
+      // Devolver un objeto con estructura válida en lugar de propagar el error
+      return {
+        success: false,
+        message: error.message || 'Error al obtener estadísticas de servicios',
+        dailyServices: [],
+        avgServiceValue: 0
+      };
     }
   }
   
@@ -46,13 +92,48 @@ class DashboardService {
    */
   async getFinancialStats(timePeriod = 'month') {
     try {
+      console.log('Solicitando financial stats, timePeriod:', timePeriod);
       const response = await api.get('/dashboard/financial-stats', {
         params: { timePeriod }
       });
+      
+      // Log detallado para depuración
+      console.log('Respuesta de financial stats:', JSON.stringify(response.data, null, 2));
+      
+      // Validar la estructura de la respuesta
+      if (!response.data || typeof response.data !== 'object') {
+        console.warn('Respuesta inválida en getFinancialStats:', response);
+        // Devolver un objeto con estructura válida pero vacío
+        return {
+          success: false,
+          message: 'Respuesta inválida del servidor',
+          summary: {
+            revenue: 0,
+            expenses: 0,
+            profit: 0,
+            profitMargin: 0
+          },
+          dailyRevenue: [],
+          dailyExpenses: []
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Get financial stats error:', error);
-      throw error;
+      // Devolver un objeto con estructura válida en lugar de propagar el error
+      return {
+        success: false,
+        message: error.message || 'Error al obtener estadísticas financieras',
+        summary: {
+          revenue: 0,
+          expenses: 0,
+          profit: 0,
+          profitMargin: 0
+        },
+        dailyRevenue: [],
+        dailyExpenses: []
+      };
     }
   }
   
@@ -64,14 +145,36 @@ class DashboardService {
    */
   async getHotelStats(timePeriod = 'month', hotelId = null) {
     try {
+      console.log('Solicitando hotel stats, timePeriod:', timePeriod, 'hotelId:', hotelId);
+      
       const params = { timePeriod };
       if (hotelId) params.hotelId = hotelId;
       
       const response = await api.get('/dashboard/hotel-stats', { params });
+      
+      // Log detallado para depuración
+      console.log('Respuesta de hotel stats:', JSON.stringify(response.data, null, 2));
+      
+      // Validar la estructura de la respuesta
+      if (!response.data || typeof response.data !== 'object') {
+        console.warn('Respuesta inválida en getHotelStats:', response);
+        // Devolver un objeto con estructura válida pero vacío
+        return {
+          success: false,
+          message: 'Respuesta inválida del servidor',
+          hotels: []
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Get hotel stats error:', error);
-      throw error;
+      // Devolver un objeto con estructura válida en lugar de propagar el error
+      return {
+        success: false,
+        message: error.message || 'Error al obtener estadísticas de hoteles',
+        hotels: []
+      };
     }
   }
   
@@ -118,13 +221,35 @@ class DashboardService {
    */
   async getAuditLogs(limit = 10) {
     try {
+      console.log('Solicitando audit logs, limit:', limit);
+      
       const response = await api.get('/dashboard/audit-logs', {
         params: { limit }
       });
+      
+      // Log detallado para depuración
+      console.log('Respuesta de audit logs:', JSON.stringify(response.data, null, 2));
+      
+      // Validar la estructura de la respuesta
+      if (!response.data || typeof response.data !== 'object') {
+        console.warn('Respuesta inválida en getAuditLogs:', response);
+        // Devolver un objeto con estructura válida pero vacío
+        return {
+          success: false,
+          message: 'Respuesta inválida del servidor',
+          logs: []
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Get audit logs error:', error);
-      throw error;
+      // Devolver un objeto con estructura válida en lugar de propagar el error
+      return {
+        success: false,
+        message: error.message || 'Error al obtener logs de auditoría',
+        logs: []
+      };
     }
   }
   

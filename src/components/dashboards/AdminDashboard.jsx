@@ -60,27 +60,52 @@ const AdminDashboard = () => {
       const financialStats = await dashboardService.getFinancialStats(timePeriod);
       const hotelStats = await dashboardService.getHotelStats(timePeriod);
       
-      // Check if we have valid data from the API
-      const hasValidFinancialStats = financialStats && financialStats.summary;
-      const hasValidAdminMetrics = adminMetrics && adminMetrics.servicesByStatus;
+      // Verificar datos y proporcionar valores predeterminados si están incompletos
+      const hasFinancialStats = financialStats && typeof financialStats === 'object';
+      const hasAdminMetrics = adminMetrics && typeof adminMetrics === 'object';
       
-      if (!hasValidFinancialStats || !hasValidAdminMetrics) {
-        throw new Error('Datos incompletos del API');
+      // Si no hay datos financieros o de métricas en absoluto, podemos mostrar una notificación
+      if (!hasFinancialStats && !hasAdminMetrics) {
+        console.warn('Datos incompletos del API - usando valores predeterminados');
+        showNotification({
+          type: 'warning',
+          message: 'Algunos datos del dashboard no están disponibles. Mostrando información parcial.'
+        });
       }
       
-      // Update stats from backend data
+      // Crear estructuras predeterminadas para los datos faltantes
+      const financialSummary = hasFinancialStats && financialStats.summary ? financialStats.summary : {
+        revenue: 0,
+        expenses: 0,
+        profit: 0
+      };
+      
+      const serviceStatusData = hasAdminMetrics && adminMetrics.servicesByStatus ? adminMetrics.servicesByStatus : {
+        PENDING_PICKUP: 0,
+        PICKED_UP: 0,
+        LABELED: 0,
+        IN_PROCESS: 0,
+        PARTIAL_DELIVERY: 0,
+        COMPLETED: 0,
+        CANCELLED: 0
+      };
+      
+      // Update stats from backend data con mayor tolerancia a fallos
       setStats({
-        totalRevenue: hasValidFinancialStats ? financialStats.summary.revenue || 0 : 0,
-        totalExpenses: hasValidFinancialStats ? financialStats.summary.expenses || 0 : 0,
-        netIncome: hasValidFinancialStats ? financialStats.summary.profit || 0 : 0,
-        totalServices: adminMetrics.totalServices || 0,
-        totalHotels: (adminMetrics.topHotels && adminMetrics.topHotels.length) || 0,
-        totalRepartidores: adminMetrics.repartidores || 0,
+        totalRevenue: financialSummary.revenue || 0,
+        totalExpenses: financialSummary.expenses || 0,
+        netIncome: financialSummary.profit || 0,
+        totalServices: hasAdminMetrics ? adminMetrics.totalServices || 0 : 0,
+        totalHotels: hasAdminMetrics && adminMetrics.topHotels ? adminMetrics.topHotels.length || 0 : 0,
+        totalRepartidores: hasAdminMetrics ? adminMetrics.repartidores || 0 : 0,
         averageServiceValue: serviceStats && serviceStats.avgServiceValue ? serviceStats.avgServiceValue : 0,
-        completionRate: hasValidAdminMetrics && adminMetrics.servicesByStatus.COMPLETED > 0 && adminMetrics.totalServices > 0 ? 
-          (adminMetrics.servicesByStatus.COMPLETED / adminMetrics.totalServices) * 100 : 0,
-        todayServices: adminMetrics.completedToday || 0,
-        pendingServices: adminMetrics.pendingPickup || 0
+        completionRate: 
+          serviceStatusData.COMPLETED > 0 && 
+          hasAdminMetrics && 
+          adminMetrics.totalServices > 0 ? 
+            (serviceStatusData.COMPLETED / adminMetrics.totalServices) * 100 : 0,
+        todayServices: hasAdminMetrics ? adminMetrics.completedToday || 0 : 0,
+        pendingServices: hasAdminMetrics ? adminMetrics.pendingPickup || 0 : 0
       });
       
       // Prepare chart data from API response
@@ -148,39 +173,75 @@ const AdminDashboard = () => {
 
   const prepareApiChartData = (adminMetrics, serviceStats, financialStats, hotelStats) => {
     try {
-      // Check if we have valid data structures
-      const hasValidFinancialData = financialStats && financialStats.dailyRevenue && Array.isArray(financialStats.dailyRevenue);
-      const hasValidStatusData = adminMetrics && adminMetrics.servicesByStatus;
-      const hasValidHotelData = adminMetrics && adminMetrics.topHotels && Array.isArray(adminMetrics.topHotels);
+      // Verificar la existencia y validez de los datos con mayor tolerancia
+      const hasFinancialData = financialStats && typeof financialStats === 'object';
+      const hasValidFinancialData = hasFinancialData && financialStats.dailyRevenue && Array.isArray(financialStats.dailyRevenue);
       
-      // Format daily revenue and expenses data
+      const hasAdminMetricsData = adminMetrics && typeof adminMetrics === 'object';
+      const hasValidStatusData = hasAdminMetricsData && adminMetrics.servicesByStatus && typeof adminMetrics.servicesByStatus === 'object';
+      const hasValidHotelData = hasAdminMetricsData && adminMetrics.topHotels && Array.isArray(adminMetrics.topHotels);
+      
+      // Referencia segura a servicesByStatus
+      const servicesByStatus = hasValidStatusData ? adminMetrics.servicesByStatus : {
+        PENDING_PICKUP: 0,
+        PICKED_UP: 0,
+        LABELED: 0,
+        IN_PROCESS: 0,
+        PARTIAL_DELIVERY: 0,
+        COMPLETED: 0
+      };
+      
+      // Format daily revenue and expenses data con manejo de valores faltantes
       const revenueChart = hasValidFinancialData ? financialStats.dailyRevenue.map((day, index) => {
-        const expenseData = financialStats.dailyExpenses && financialStats.dailyExpenses[index] || { expenses: 0 };
+        // Validación segura para datos de gastos
+        const expenseData = hasFinancialData && 
+                           financialStats.dailyExpenses && 
+                           Array.isArray(financialStats.dailyExpenses) && 
+                           financialStats.dailyExpenses[index] || { expenses: 0 };
+        
+        // Validación segura para servicios diarios
+        const dailyServiceCount = serviceStats && 
+                                 serviceStats.dailyServices && 
+                                 Array.isArray(serviceStats.dailyServices) && 
+                                 serviceStats.dailyServices[index] ? 
+                                   serviceStats.dailyServices[index].count || 0 : 0;
+        
+        // Formato de fecha seguro
+        let formattedDate;
+        try {
+          formattedDate = new Date(day.day).toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' });
+        } catch (e) {
+          formattedDate = 'Fecha inválida';
+        }
+        
         return {
-          date: new Date(day.day).toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' }),
+          date: formattedDate,
           revenue: day.revenue || 0,
           expenses: expenseData.expenses || 0,
-          services: serviceStats && serviceStats.dailyServices ? 
-            (serviceStats.dailyServices[index]?.count || 0) : 0
+          services: dailyServiceCount
         };
-      }).slice(-7) : []; // Last 7 days
+      }).slice(-7) : []; // Últimos 7 días
       
-      // Services by status
+      // Services by status con validación
       const statusChart = hasValidStatusData ? [
-        { name: 'Pendientes', value: adminMetrics.servicesByStatus.PENDING_PICKUP || 0, color: '#f59e0b' },
-        { name: 'Recogidos', value: adminMetrics.servicesByStatus.PICKED_UP || 0, color: '#3b82f6' },
-        { name: 'Rotulados', value: adminMetrics.servicesByStatus.LABELED || 0, color: '#6366f1' },
-        { name: 'En Proceso', value: adminMetrics.servicesByStatus.IN_PROCESS || 0, color: '#8b5cf6' },
-        { name: 'Entrega Parcial', value: adminMetrics.servicesByStatus.PARTIAL_DELIVERY || 0, color: '#f97316' },
-        { name: 'Completados', value: adminMetrics.servicesByStatus.COMPLETED || 0, color: '#10b981' }
+        { name: 'Pendientes', value: servicesByStatus.PENDING_PICKUP || 0, color: '#f59e0b' },
+        { name: 'Recogidos', value: servicesByStatus.PICKED_UP || 0, color: '#3b82f6' },
+        { name: 'Rotulados', value: servicesByStatus.LABELED || 0, color: '#6366f1' },
+        { name: 'En Proceso', value: servicesByStatus.IN_PROCESS || 0, color: '#8b5cf6' },
+        { name: 'Entrega Parcial', value: servicesByStatus.PARTIAL_DELIVERY || 0, color: '#f97316' },
+        { name: 'Completados', value: servicesByStatus.COMPLETED || 0, color: '#10b981' }
       ].filter(item => item.value > 0) : [];
       
-      // Services by hotel
-      const hotelChart = hasValidHotelData ? adminMetrics.topHotels.map(hotel => ({
-        name: hotel.name ? hotel.name.replace('Hotel ', '') : 'Hotel Desconocido',
-        services: hotel.services || 0,
-        revenue: hotel.revenue || 0
-      })) : [];
+      // Services by hotel con validación
+      const hotelChart = hasValidHotelData ? adminMetrics.topHotels.map(hotel => {
+        if (!hotel) return null;
+        
+        return {
+          name: hotel.name ? hotel.name.replace('Hotel ', '') : 'Hotel Desconocido',
+          services: hotel.services || 0,
+          revenue: hotel.revenue || 0
+        };
+      }).filter(Boolean) : []; // Filtrar entradas nulas
       
       setChartData({
         revenueChart: revenueChart.length > 0 ? revenueChart : [],
@@ -190,7 +251,7 @@ const AdminDashboard = () => {
       });
     } catch (error) {
       console.error('Error preparing API chart data:', error);
-      // If there's any error in parsing API data, set empty charts
+      // Si hay algún error en el procesamiento de datos, usar gráficos vacíos
       setChartData({
         revenueChart: [],
         servicesChart: [],
@@ -202,16 +263,36 @@ const AdminDashboard = () => {
   
   const loadApiRecentActivities = async () => {
     try {
-      // Try to fetch audit logs from API
+      // Intentar obtener los logs de auditoría de la API con manejo más robusto de errores
       const response = await dashboardService.getAuditLogs();
+      
+      // Verificar de manera segura la estructura de la respuesta
       if (response && response.logs && Array.isArray(response.logs)) {
-        setRecentActivities(response.logs.slice(0, 10));
+        // Filtrar posibles entradas nulas o inválidas y limitar a 10 items
+        const validLogs = response.logs
+          .filter(log => log && typeof log === 'object')
+          .slice(0, 10);
+        
+        setRecentActivities(validLogs);
       } else {
-        throw new Error('Respuesta de logs de auditoría inválida');
+        console.warn('Formato de respuesta de logs de auditoría inesperado:', response);
+        // Intentar extraer logs si están en un formato diferente
+        if (response && typeof response === 'object') {
+          // Buscar cualquier array en la respuesta que pueda contener los logs
+          const possibleLogs = Object.values(response).find(value => Array.isArray(value));
+          
+          if (possibleLogs && possibleLogs.length > 0) {
+            setRecentActivities(possibleLogs.slice(0, 10));
+            return;
+          }
+        }
+        
+        // Si no encontramos logs en ninguna parte, usar datos locales
+        loadLocalRecentActivities();
       }
     } catch (error) {
       console.error('Error loading audit logs:', error);
-      // Fallback to local storage
+      // Fallback a almacenamiento local en caso de error
       loadLocalRecentActivities();
     }
   };
@@ -552,7 +633,7 @@ const AdminDashboard = () => {
                             {activity.details}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
-                            {activity.user} - {formatDate(activity.timestamp)}
+                            {activity.user && typeof activity.user === 'object' ? activity.user.name : activity.userName || 'Usuario'} - {formatDate(activity.timestamp)}
                           </p>
                         </div>
                       </div>

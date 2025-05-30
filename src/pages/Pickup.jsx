@@ -451,7 +451,7 @@ const Pickup = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(service.timestamp)}
+                        {formatDate(service.timestamp || service.createdAt || service.pickupDate)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {service.repartidor ? (
