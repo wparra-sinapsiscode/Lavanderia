@@ -14,6 +14,19 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
 
   const addNotification = (notification) => {
+    // Prevenir renderizaciones infinitas o llamadas redundantes
+    // comprobando si ya existe una notificación idéntica recientemente
+    const isDuplicate = notifications.some(n => 
+      n.message === notification.message && 
+      n.type === (notification.type || 'info') &&
+      (Date.now() - new Date(n.timestamp).getTime()) < 1000 // Si es igual y hace menos de 1 segundo
+    );
+
+    if (isDuplicate) {
+      console.log('Prevented duplicate notification:', notification.message);
+      return null; // No añadir notificaciones duplicadas en corto período
+    }
+
     const id = Date.now().toString();
     const newNotification = {
       id,
@@ -27,16 +40,25 @@ export const NotificationProvider = ({ children }) => {
     // Auto remove after timeout for non-persistent notifications
     if (!notification.persistent) {
       const timeout = notification.type === 'error' ? 8000 : 5000; // Errors stay longer
-      setTimeout(() => {
+      // Usar un ID para el timeout que podamos limpiar si es necesario
+      const timeoutId = setTimeout(() => {
         removeNotification(id);
       }, timeout);
+      
+      // Guardar el ID del timeout en una propiedad del contexto
+      return { id, timeoutId };
     }
 
-    return id;
+    return { id };
   };
 
   const removeNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    // Prevenir actualizaciones infinitas verificando si la notificación existe
+    const notificationExists = notifications.some(n => n.id === id);
+    
+    if (notificationExists) {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }
   };
 
   const clearAllNotifications = () => {

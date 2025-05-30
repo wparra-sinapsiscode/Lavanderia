@@ -289,23 +289,57 @@ const Hotels = () => {
       try {
         setLoading(true);
         
-        // Implementar cuando el backend tenga el endpoint para eliminar hoteles
-        // const response = await hotelService.deleteHotel(hotel.id);
+        // Primero verificamos si el hotel tiene dependencias
+        try {
+          const dependenciesResponse = await hotelService.checkHotelDependencies(hotel.id);
+          
+          if (!dependenciesResponse.data.canDelete) {
+            const deps = dependenciesResponse.data.dependencies;
+            let mensaje = 'No se puede eliminar este hotel porque tiene registros relacionados:\n';
+            
+            if (deps.services > 0) {
+              mensaje += `- Servicios: ${deps.services}\n`;
+            }
+            if (deps.bagLabels > 0) {
+              mensaje += `- Etiquetas de bolsas: ${deps.bagLabels}\n`;
+            }
+            if (deps.transactions > 0) {
+              mensaje += `- Transacciones: ${deps.transactions}\n`;
+            }
+            
+            warning('No se puede eliminar', mensaje);
+            return;
+          }
+          
+          // Si no tiene dependencias, procedemos con la eliminación
+          const response = await hotelService.deleteHotel(hotel.id);
+          
+          if (response.success) {
+            success('Hotel Eliminado', `${hotel.name} ha sido eliminado exitosamente`);
+            loadHotels();
+            return;
+          }
+        } catch (apiError) {
+          console.error('Error verificando dependencias o eliminando hotel:', apiError);
+          
+          // Si hay un error de API, intentamos con la versión local como fallback
+          error('Error de conexión', 'No se pudo contactar al servidor');
+        }
         
-        // Mientras tanto, usar almacenamiento local
+        // Fallback: eliminar localmente si la API falla
         const hotels = hotelStorage.getHotels();
         const updatedHotels = hotels.filter(h => h.id !== hotel.id);
         
-        const success = hotelStorage.setHotels(updatedHotels);
+        const successLocal = hotelStorage.setHotels(updatedHotels);
         
-        if (success) {
+        if (successLocal) {
           auditStorage.addAuditEntry({
-            action: 'HOTEL_DELETED',
+            action: 'HOTEL_DELETED_LOCALLY',
             user: user.name,
-            details: `Hotel ${hotel.name} eliminado`
+            details: `Hotel ${hotel.name} eliminado localmente (sin conexión)`
           });
 
-          warning('Hotel Eliminado', `${hotel.name} ha sido eliminado`);
+          warning('Hotel Eliminado Localmente', `${hotel.name} ha sido eliminado solo en este dispositivo`);
           loadHotels();
         }
       } catch (err) {

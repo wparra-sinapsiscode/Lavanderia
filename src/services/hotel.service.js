@@ -37,6 +37,36 @@ class HotelService {
   }
   
   /**
+   * Check if a hotel can be deleted
+   * @param {string} id - Hotel ID
+   * @returns {Promise<Object>} Result with canDelete flag and dependencies
+   */
+  async checkHotelDependencies(id) {
+    try {
+      const response = await api.get(`/hotels/${id}/dependencies`);
+      return response.data;
+    } catch (error) {
+      console.error('Check hotel dependencies error:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete a hotel
+   * @param {string} id - Hotel ID
+   * @returns {Promise<Object>} Result of deletion
+   */
+  async deleteHotel(id) {
+    try {
+      const response = await api.delete(`/hotels/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error('Delete hotel error:', error);
+      throw error;
+    }
+  }
+  
+  /**
    * Create a new hotel (admin only)
    * @param {Object} hotelData - Hotel data
    * @returns {Promise<Object>} Created hotel
