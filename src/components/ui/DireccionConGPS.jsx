@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNotifications } from '../../store/NotificationContext';
 import { MapPin, Search, X } from 'lucide-react';
 import MapaSelector from './MapaSelector';
-import { determinarZona } from '../../constants/zonas-lima';
+import geocodeService from '../../services/geocode.service';
 
 /**
  * DireccionConGPS - Componente para autocompletar direcciones y obtener coordenadas GPS
@@ -75,7 +75,7 @@ const DireccionConGPS = ({
     }
   }, [direccion, coordenadas, direccionValida, onChange, onValidChange]);
 
-  // Función para buscar sugerencias de direcciones usando Nominatim
+  // Función para buscar sugerencias de direcciones usando nuestro servicio
   const buscarSugerencias = async (texto) => {
     if (!texto || texto.length < 3) {
       setSugerencias([]);
@@ -87,25 +87,9 @@ const DireccionConGPS = ({
     setError('');
     
     try {
-      // Agregamos "Lima, Perú" al texto de búsqueda para enfocar resultados en Lima Metropolitana
-      const textoBusqueda = `${texto}, Lima, Perú`;
+      // Usamos nuestro servicio de geocodificación
+      const data = await geocodeService.searchAddresses(texto, 5);
       
-      // Nominatim tiene un límite de 1 solicitud por segundo, respetamos este límite
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(textoBusqueda)}&limit=5&addressdetails=1&countrycodes=pe&bounded=1&viewbox=-77.1950,-11.9437,-76.7025,-12.0640`,
-        {
-          headers: {
-            'Accept-Language': 'es',
-            'User-Agent': 'FumyLimp-LavanderiaCApp'
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error('Error al obtener sugerencias de direcciones');
-      }
-      
-      const data = await response.json();
       setSugerencias(data);
       setMostrarSugerencias(true);
     } catch (err) {
@@ -163,7 +147,7 @@ const DireccionConGPS = ({
     const direccionCompleta = sugerencia.display_name;
     
     // Determinar la zona de Lima
-    const zona = determinarZona(direccionCompleta, defaultZone);
+    const zona = geocodeService.determinarZona(direccionCompleta);
     
     setDireccion(direccionCompleta);
     setCoordenadas({
@@ -190,24 +174,8 @@ const DireccionConGPS = ({
     setError('');
     
     try {
-      // Agregar "Lima, Perú" al texto para enfocar la búsqueda
-      const textoBusqueda = `${direccion}, Lima, Perú`;
-      
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(textoBusqueda)}&limit=1&countrycodes=pe&bounded=1&viewbox=-77.1950,-11.9437,-76.7025,-12.0640`,
-        {
-          headers: {
-            'Accept-Language': 'es',
-            'User-Agent': 'FumyLimp-LavanderiaCApp'
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error('Error al validar la dirección');
-      }
-      
-      const data = await response.json();
+      // Usar nuestro servicio de geocodificación
+      const data = await geocodeService.searchAddresses(direccion, 1);
       
       if (data && data.length > 0) {
         // Verificar que la dirección está realmente en Lima
@@ -217,7 +185,7 @@ const DireccionConGPS = ({
           const direccionCompleta = data[0].display_name;
           
           // Determinar la zona de Lima
-          const zona = determinarZona(direccionCompleta, defaultZone);
+          const zona = geocodeService.determinarZona(direccionCompleta);
           
           // Actualizar coordenadas
           setCoordenadas({
@@ -260,7 +228,7 @@ const DireccionConGPS = ({
       const direccionCompleta = ubicacion.direccion;
       
       // Determinar la zona de Lima
-      const zona = determinarZona(direccionCompleta, defaultZone);
+      const zona = geocodeService.determinarZona(direccionCompleta);
       
       setDireccion(direccionCompleta);
       setCoordenadas(ubicacion.coordenadas);

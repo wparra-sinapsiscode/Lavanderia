@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, MapPin, Navigation } from 'lucide-react';
+import geocodeService from '../../services/geocode.service';
 
 /**
  * MapaSelector - Componente que muestra un mapa para seleccionar una ubicación manualmente
@@ -65,6 +66,12 @@ const MapaSelector = ({ onSelectLocation, onClose, initialCoordinates }) => {
       
       const L = window.L;
       
+      // Prevenir error de mapa ya inicializado
+      if (mapRef.current._leaflet_id) {
+        console.log('Mapa ya inicializado, reusando instancia existente');
+        return;
+      }
+      
       // Inicializar mapa
       const map = L.map(mapRef.current).setView([initialCenter.lat, initialCenter.lng], 13);
       
@@ -105,27 +112,13 @@ const MapaSelector = ({ onSelectLocation, onClose, initialCoordinates }) => {
     }
   };
   
-  // Obtener dirección desde coordenadas usando Nominatim (geocodificación inversa)
+  // Obtener dirección desde coordenadas usando nuestro servicio (geocodificación inversa)
   const obtenerDireccionDesdeCoords = async (lat, lng) => {
     setCargando(true);
     setError('');
     
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-        {
-          headers: {
-            'Accept-Language': 'es',
-            'User-Agent': 'FumyLimp-LavanderiaCApp'
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error('Error al obtener la dirección');
-      }
-      
-      const data = await response.json();
+      const data = await geocodeService.reverseGeocode(lat, lng);
       
       if (data && data.display_name) {
         // Verificar si está en Lima
