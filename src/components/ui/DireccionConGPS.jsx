@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNotifications } from '../../store/NotificationContext';
+import { MapPin, Search } from 'lucide-react';
+import MapaSelector from './MapaSelector';
 
 /**
  * DireccionConGPS - Componente para autocompletar direcciones y obtener coordenadas GPS
@@ -29,6 +31,7 @@ const DireccionConGPS = ({
   const [error, setError] = useState('');
   const [coordenadas, setCoordenadas] = useState({ lat: null, lng: null });
   const [direccionValida, setDireccionValida] = useState(!!initialValue);
+  const [mostrarMapa, setMostrarMapa] = useState(false);
   
   const timeoutRef = useRef(null);
   const sugerenciasRef = useRef(null);
@@ -212,6 +215,24 @@ const DireccionConGPS = ({
       setCargando(false);
     }
   };
+  
+  // Manejar selección de ubicación desde el mapa
+  const handleSeleccionUbicacionMapa = (ubicacion) => {
+    if (ubicacion && ubicacion.direccion && ubicacion.coordenadas) {
+      setDireccion(ubicacion.direccion);
+      setCoordenadas(ubicacion.coordenadas);
+      setDireccionValida(true);
+      showNotification('Ubicación seleccionada correctamente', 'success');
+      
+      // Notificar el cambio
+      if (onChange) {
+        onChange({
+          direccion: ubicacion.direccion,
+          coordenadas: ubicacion.coordenadas
+        });
+      }
+    }
+  };
 
   return (
     <div className={`relative ${className}`}>
@@ -221,38 +242,63 @@ const DireccionConGPS = ({
         </label>
       )}
       
-      <div className="flex">
-        <input
-          type="text"
-          value={direccion}
-          onChange={handleDireccionChange}
-          onBlur={() => {
-            // Dar tiempo para que se pueda hacer clic en una sugerencia
-            setTimeout(() => {
-              if (mostrarSugerencias) {
-                setMostrarSugerencias(false);
+      <div className="flex flex-col space-y-2">
+        <div className="flex">
+          <input
+            type="text"
+            value={direccion}
+            onChange={handleDireccionChange}
+            onBlur={() => {
+              // Dar tiempo para que se pueda hacer clic en una sugerencia
+              setTimeout(() => {
+                if (mostrarSugerencias) {
+                  setMostrarSugerencias(false);
+                }
+              }, 200);
+            }}
+            onFocus={() => {
+              if (sugerencias.length > 0) {
+                setMostrarSugerencias(true);
               }
-            }, 200);
-          }}
-          onFocus={() => {
-            if (sugerencias.length > 0) {
-              setMostrarSugerencias(true);
-            }
-          }}
-          placeholder={placeholder}
-          className={`block w-full px-3 py-2 border ${
-            error ? 'border-red-500' : direccionValida ? 'border-green-500' : 'border-gray-300'
-          } rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
-        />
-        <button
-          type="button"
-          onClick={validarDireccion}
-          disabled={cargando || !direccion}
-          className="ml-2 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-        >
-          Validar
-        </button>
+            }}
+            placeholder={placeholder}
+            className={`block w-full px-3 py-2 border ${
+              error ? 'border-red-500' : direccionValida ? 'border-green-500' : 'border-gray-300'
+            } rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
+          />
+        </div>
+        
+        <div className="flex space-x-2">
+          <button
+            type="button"
+            onClick={validarDireccion}
+            disabled={cargando || !direccion}
+            className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          >
+            <Search className="h-4 w-4 mr-2" />
+            Validar dirección
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => setMostrarMapa(true)}
+            disabled={cargando}
+            className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          >
+            <MapPin className="h-4 w-4 mr-2" />
+            Seleccionar en mapa
+          </button>
+        </div>
       </div>
+      
+      {/* Selector de mapa */}
+      {mostrarMapa && (
+        <MapaSelector
+          onSelectLocation={handleSeleccionUbicacionMapa}
+          onClose={() => setMostrarMapa(false)}
+          initialCoordinates={coordenadas.lat && coordenadas.lng ? coordenadas : null}
+        />
+      )}
       
       {mostrarSugerencias && sugerencias.length > 0 && (
         <div
