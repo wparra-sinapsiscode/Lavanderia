@@ -5,13 +5,13 @@ import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
 import { serviceStorage, hotelStorage, auditStorage } from '../../utils/storage';
 import { calculateServicePrice, convertToBase64 } from '../../utils';
-import { SIMULATION_LOCATIONS } from '../../constants';
 import serviceService from '../../services/service.service';
 import hotelService from '../../services/hotel.service';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
 import SignatureCanvas from '../ui/SignatureCanvas';
+import DireccionConGPS from '../ui/DireccionConGPS';
 import { Camera, MapPin, Package, Scale } from 'lucide-react';
 
 const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
@@ -41,7 +41,6 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
   useEffect(() => {
     if (serviceId) {
       loadServiceData();
-      simulateGeolocation();
     }
   }, [serviceId]);
 
@@ -71,107 +70,217 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
     try {
       setLoading(true);
       
-      // Fetch service from API
-      const serviceResponse = await serviceService.getServiceById(serviceId);
-      if (serviceResponse.success && serviceResponse.data) {
-        const foundService = serviceResponse.data;
-        setService(foundService);
-        
-        // Fetch hotel data
-        if (foundService.hotelId) {
-          const hotelResponse = await hotelService.getHotelById(foundService.hotelId);
-          if (hotelResponse.success && hotelResponse.data) {
-            setHotel(hotelResponse.data);
-          } else {
-            // Fallback to local storage
-            fallbackToLocalStorage(foundService);
+      // Intenta cargar datos desde la API
+      try {
+        // Fetch service from API
+        const serviceResponse = await serviceService.getServiceById(serviceId);
+        if (serviceResponse.success && serviceResponse.data) {
+          const foundService = serviceResponse.data;
+          setService(foundService);
+          
+          // Fetch hotel data
+          if (foundService.hotelId) {
+            const hotelResponse = await hotelService.getHotelById(foundService.hotelId);
+            if (hotelResponse.success && hotelResponse.data) {
+              setHotel(hotelResponse.data);
+              showNotification({
+                type: 'success',
+                message: 'Datos del servicio cargados correctamente'
+              });
+              setLoading(false);
+              return; // Terminamos con éxito
+            }
           }
-        } else {
-          // Fallback to local storage if no hotelId
-          fallbackToLocalStorage(foundService);
         }
-      } else {
-        // Fallback to local storage
+        // Si llegamos aquí, algo falló y necesitamos usar el fallback
+        throw new Error('Datos incompletos desde la API');
+      } catch (apiError) {
+        console.warn('Fallback a almacenamiento local:', apiError);
+        showNotification({
+          type: 'warning',
+          message: 'Usando datos almacenados localmente (modo offline)'
+        });
         fallbackToLocalStorage();
       }
     } catch (error) {
-      console.error('Error loading service data:', error);
+      console.error('Error crítico al cargar datos:', error);
       showNotification({
         type: 'error',
-        message: 'Error al cargar datos del servicio. Usando datos locales.'
+        message: 'Error grave al cargar datos del servicio'
       });
-      fallbackToLocalStorage();
     } finally {
       setLoading(false);
     }
   };
   
   const fallbackToLocalStorage = (foundService = null) => {
-    if (!foundService) {
-      const services = serviceStorage.getServices();
-      foundService = services.find(s => s.id === serviceId);
+    try {
+      if (!foundService) {
+        const services = serviceStorage.getServices();
+        foundService = services.find(s => s.id === serviceId);
+        if (foundService) {
+          setService(foundService);
+        } else {
+          throw new Error(`No se encontró el servicio con ID ${serviceId} en almacenamiento local`);
+        }
+      }
+      
       if (foundService) {
-        setService(foundService);
+        // Load hotel data from local storage
+        const hotels = hotelStorage.getHotels();
+        let serviceHotel = null;
+        
+        // Try to find hotel by ID first
+        if (foundService.hotelId) {
+          serviceHotel = hotels.find(h => h.id === foundService.hotelId);
+        }
+        
+        // Fallback: try to find hotel by name if ID doesn't match
+        if (!serviceHotel && foundService.hotel) {
+          serviceHotel = hotels.find(h => h.name === foundService.hotel);
+        }
+        
+        // Last resort: use first hotel as fallback
+        if (!serviceHotel && hotels.length > 0) {
+          serviceHotel = hotels[0];
+          // Update the service with the correct hotel data
+          foundService.hotelId = serviceHotel.id;
+          foundService.hotel = serviceHotel.name;
+          
+          console.warn(`Usando hotel de respaldo: ${serviceHotel.name} para servicio ${serviceId}`);
+        }
+        
+        if (!serviceHotel) {
+          throw new Error('No se encontraron hoteles en almacenamiento local');
+        }
+        
+        setHotel(serviceHotel);
+        console.log(`Datos cargados desde almacenamiento local: ${foundService.guestName} - ${serviceHotel.name}`);
       }
-    }
-    
-    if (foundService) {
-      // Load hotel data from local storage
-      const hotels = hotelStorage.getHotels();
-      let serviceHotel = null;
-      
-      // Try to find hotel by ID first
-      if (foundService.hotelId) {
-        serviceHotel = hotels.find(h => h.id === foundService.hotelId);
-      }
-      
-      // Fallback: try to find hotel by name if ID doesn't match
-      if (!serviceHotel && foundService.hotel) {
-        serviceHotel = hotels.find(h => h.name === foundService.hotel);
-      }
-      
-      // Last resort: use first hotel as fallback
-      if (!serviceHotel && hotels.length > 0) {
-        serviceHotel = hotels[0];
-        // Update the service with the correct hotel data
-        foundService.hotelId = serviceHotel.id;
-        foundService.hotel = serviceHotel.name;
-      }
-      
-      setHotel(serviceHotel);
+    } catch (error) {
+      console.error('Error en fallback a almacenamiento local:', error);
+      showNotification({
+        type: 'error',
+        message: error.message || 'Error al cargar datos locales'
+      });
     }
   };
 
-  const simulateGeolocation = () => {
-    // Simulate getting current location (in real app would use navigator.geolocation)
-    const locations = Object.values(SIMULATION_LOCATIONS);
-    const randomLocation = locations[Math.floor(Math.random() * locations.length)];
-    setLocation(randomLocation);
+  const obtenerUbicacionActual = () => {
+    if (!navigator.geolocation) {
+      showNotification({
+        type: 'error',
+        message: 'Su navegador no soporta geolocalización'
+      });
+      return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        try {
+          // Intentar obtener el nombre de la ubicación a través de geocodificación inversa
+          const geocodeService = (await import('../../services/geocode.service')).default;
+          const addressData = await geocodeService.reverseGeocode(latitude, longitude);
+          
+          setLocation({
+            lat: latitude,
+            lng: longitude,
+            name: addressData.display_name || 'Ubicación actual'
+          });
+          
+          showNotification({
+            type: 'success',
+            message: 'Ubicación capturada correctamente'
+          });
+        } catch (error) {
+          console.error('Error al obtener nombre de ubicación:', error);
+          
+          // Usar coordenadas sin nombre específico
+          setLocation({
+            lat: latitude,
+            lng: longitude,
+            name: `Ubicación (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
+          });
+        }
+      },
+      (error) => {
+        console.error('Error al obtener ubicación:', error);
+        showNotification({
+          type: 'error',
+          message: `No se pudo obtener su ubicación: ${error.message}`
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
   };
 
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files);
     
     try {
+      if (files.length > 5) {
+        showNotification({
+          type: 'warning',
+          message: 'Solo se permite un máximo de 5 fotos por servicio'
+        });
+        return;
+      }
+      
       // Store the original files for API upload
-      const newPhotos = files.map(file => ({
-        id: Date.now() + Math.random(),
-        name: file.name,
-        file: file,  // Store the original file for API upload
-        previewUrl: URL.createObjectURL(file),
-        timestamp: new Date().toISOString()
+      const newPhotos = await Promise.all(files.map(async (file) => {
+        // Validar tamaño y tipo
+        if (file.size > 5 * 1024 * 1024) { // 5MB max
+          throw new Error(`La imagen ${file.name} excede el tamaño máximo permitido (5MB)`);
+        }
+        
+        if (!file.type.startsWith('image/')) {
+          throw new Error(`El archivo ${file.name} no es una imagen válida`);
+        }
+        
+        // Crear el objeto de foto
+        return {
+          id: Date.now() + Math.random(),
+          name: file.name,
+          file: file,  // Store the original file for API upload
+          previewUrl: URL.createObjectURL(file),
+          timestamp: new Date().toISOString(),
+          size: (file.size / 1024).toFixed(1) + ' KB' // Tamaño en KB
+        };
       }));
       
+      // Verificar que no se exceda el límite total
+      if (photos.length + newPhotos.length > 5) {
+        showNotification({
+          type: 'warning',
+          message: `Solo se permite un máximo de 5 fotos (ya tiene ${photos.length})`
+        });
+        return;
+      }
+      
       setPhotos(prev => [...prev, ...newPhotos]);
+      showNotification({
+        type: 'success',
+        message: `${newPhotos.length} foto${newPhotos.length !== 1 ? 's' : ''} añadida${newPhotos.length !== 1 ? 's' : ''} correctamente`
+      });
     } catch (err) {
       showNotification({
         type: 'error',
-        message: 'No se pudieron procesar las fotos'
+        message: err.message || 'No se pudieron procesar las fotos'
       });
     }
   };
 
   const removePhoto = (photoId) => {
+    const photoToRemove = photos.find(p => p.id === photoId);
+    if (photoToRemove && photoToRemove.previewUrl) {
+      URL.revokeObjectURL(photoToRemove.previewUrl); // Liberar recursos
+    }
     setPhotos(prev => prev.filter(p => p.id !== photoId));
   };
 
@@ -179,6 +288,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
     setLoading(true);
 
     try {
+      // Validaciones
       if (!signature) {
         showNotification({
           type: 'error',
@@ -196,9 +306,25 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         setLoading(false);
         return;
       }
+      
+      if (!location) {
+        showNotification({
+          type: 'error',
+          message: 'Debe registrar la ubicación de recojo'
+        });
+        setLoading(false);
+        return;
+      }
 
+      // Procesar datos del formulario
       const weight = parseFloat(data.weight);
       const finalBagCount = parseInt(data.bagCount) || service.bagCount;
+      
+      // Mostrar indicador de progreso
+      showNotification({
+        type: 'info',
+        message: 'Procesando recojo, por favor espere...'
+      });
       
       // Calculate price via API if possible
       let price = 0;
@@ -209,11 +335,14 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         });
         if (priceResponse.success && priceResponse.data) {
           price = priceResponse.data.price;
+          console.log(`Precio calculado por API: S/${price.toFixed(2)}`);
         } else {
           // Fallback to local calculation
           price = calculateServicePrice(weight, hotel.pricePerKg);
+          console.log(`Precio calculado localmente: S/${price.toFixed(2)}`);
         }
       } catch (err) {
+        console.warn('Error al calcular precio por API, usando cálculo local:', err);
         // Fallback to local calculation
         price = calculateServicePrice(weight, hotel.pricePerKg);
       }
@@ -231,11 +360,13 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         } : null
       };
 
-      // Try to update service with API
+      // Intenta guardar en la API o usa almacenamiento local como respaldo
       let updateSuccess = false;
       let updatedService = null;
+      let usedLocalStorage = false;
 
       try {
+        console.log('Intentando guardar recojo en la API...');
         // First register pickup with API
         const pickupResponse = await serviceService.registerPickup(serviceId, pickupData);
         
@@ -244,11 +375,13 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           
           // Then upload photos
           if (photos.length > 0) {
+            console.log(`Subiendo ${photos.length} fotos a la API...`);
             await serviceService.uploadServicePhotos(serviceId, photos.map(p => p.file), 'pickup');
           }
           
           // Then upload signature
           if (signature) {
+            console.log('Subiendo firma a la API...');
             // Convert signature from base64 to blob
             const signatureBlob = await (async () => {
               const res = await fetch(signature);
@@ -259,15 +392,16 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           }
           
           updateSuccess = true;
+          console.log('Recojo guardado exitosamente en la API');
         }
       } catch (apiError) {
-        console.error('API error updating service:', apiError);
-        // Fall back to local storage
-        updateSuccess = false;
+        console.error('Error al guardar en API, usando almacenamiento local:', apiError);
+        usedLocalStorage = true;
       }
       
-      // If API update failed, fall back to local storage
+      // Si la actualización en la API falló, usar almacenamiento local
       if (!updateSuccess) {
+        console.log('Guardando recojo en almacenamiento local...');
         // Create updated service object for local storage
         updatedService = {
           ...service,
@@ -283,6 +417,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           repartidor: user.name,
           repartidorId: user.id,
           price,
+          syncPending: true, // Marcar para sincronización futura
           internalNotes: (service.internalNotes || '') + 
             (finalBagCount !== service.bagCount ? 
               ` | Bolsas actualizadas: ${service.bagCount} → ${finalBagCount} por repartidor` : 
@@ -298,15 +433,18 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           auditStorage.addAuditEntry({
             action: 'PICKUP_COMPLETED',
             user: user.name,
-            details: `Recojo completado para ${service.guestName} - ${typeof hotel === 'object' ? hotel.name : hotel}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}`
+            timestamp: new Date().toISOString(),
+            details: `Recojo completado para ${service.guestName} - ${typeof hotel === 'object' ? hotel.name : hotel}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}`,
+            syncPending: true
           });
+          console.log('Recojo guardado exitosamente en almacenamiento local');
         }
       }
 
       if (updateSuccess) {
         showNotification({
           type: 'success',
-          message: `Servicio de ${service.guestName} recogido exitosamente. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}`
+          message: `Servicio de ${service.guestName} recogido exitosamente. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}${usedLocalStorage ? ' (guardado localmente)' : ''}`
         });
 
         // Show redirect to labels option
@@ -318,14 +456,14 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
       } else {
         showNotification({
           type: 'error',
-          message: 'No se pudo completar el recojo'
+          message: 'No se pudo completar el recojo. Verifique su conexión e intente nuevamente.'
         });
       }
     } catch (err) {
-      console.error('Error completing pickup:', err);
+      console.error('Error crítico al completar recojo:', err);
       showNotification({
         type: 'error',
-        message: 'Ocurrió un error al completar el recojo'
+        message: `Error al completar el recojo: ${err.message || 'Error desconocido'}`
       });
     } finally {
       setLoading(false);
@@ -531,44 +669,126 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
             </div>
             
             {/* Photo Preview */}
-            {photos.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                {photos.map((photo) => (
-                  <div key={photo.id} className="relative">
-                    <img
-                      src={photo.previewUrl || photo.data}
-                      alt={photo.name}
-                      className="w-full h-32 object-cover rounded border"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(photo.id)}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
-                    >
-                      ×
-                    </button>
+            <div className="mt-4">
+              {photos.length > 0 ? (
+                <>
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm text-gray-700 font-medium">
+                      {photos.length} {photos.length === 1 ? 'foto' : 'fotos'} agregada{photos.length !== 1 ? 's' : ''}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {5 - photos.length} espacio{5 - photos.length !== 1 ? 's' : ''} disponible{5 - photos.length !== 1 ? 's' : ''}
+                    </p>
                   </div>
-                ))}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {photos.map((photo) => (
+                      <div key={photo.id} className="relative group">
+                        <div className="aspect-square overflow-hidden rounded-lg border border-gray-300">
+                          <img
+                            src={photo.previewUrl || photo.data}
+                            alt={photo.name}
+                            className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
+                          />
+                        </div>
+                        <div className="absolute inset-0 flex flex-col justify-between p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(photo.id)}
+                            className="self-end bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs hover:bg-red-600"
+                          >
+                            ×
+                          </button>
+                          <div className="bg-black bg-opacity-60 text-white text-xs p-1 rounded-sm">
+                            <p className="truncate">{photo.name}</p>
+                            <p>{photo.size}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center p-4 border-2 border-dashed border-gray-200 rounded-lg">
+                  <p className="text-gray-500">
+                    No hay fotos. Capture al menos una foto de las bolsas recogidas.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Location Input */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Ubicación de Recojo <span className="text-red-500">*</span>
+            </label>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex-1">
+                <button
+                  type="button"
+                  onClick={obtenerUbicacionActual}
+                  className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <MapPin className="h-4 w-4 mr-2" />
+                  Capturar ubicación actual
+                </button>
+              </div>
+              
+              <div className="flex-1">
+                <DireccionConGPS
+                  placeholder="Seleccione la ubicación en mapa"
+                  label="O seleccione manualmente"
+                  onChange={({ direccion, coordenadas }) => {
+                    if (coordenadas && coordenadas.lat && coordenadas.lng) {
+                      setLocation({
+                        lat: coordenadas.lat,
+                        lng: coordenadas.lng,
+                        name: direccion || 'Ubicación seleccionada'
+                      });
+                    }
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+            
+            {/* Location Display */}
+            {location && (
+              <div className="bg-green-50 p-4 rounded-lg">
+                <div className="flex items-center">
+                  <MapPin className="h-5 w-5 text-green-600 mr-2" />
+                  <div>
+                    <p className="text-sm font-medium text-green-800">
+                      Ubicación Registrada
+                    </p>
+                    <p className="text-sm text-green-700">
+                      {location.name}
+                    </p>
+                    <p className="text-xs text-green-600">
+                      Coordenadas: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {!location && (
+              <div className="bg-amber-50 p-4 rounded-lg">
+                <div className="flex items-center">
+                  <MapPin className="h-5 w-5 text-amber-600 mr-2" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">
+                      Ubicación no registrada
+                    </p>
+                    <p className="text-sm text-amber-700">
+                      Por favor capture su ubicación actual o seleccione manualmente
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-
-          {/* Location Display */}
-          {location && (
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="flex items-center">
-                <MapPin className="h-5 w-5 text-gray-600 mr-2" />
-                <div>
-                  <p className="text-sm font-medium text-gray-800">
-                    Ubicación Actual
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {location.name} ({location.lat.toFixed(4)}, {location.lng.toFixed(4)})
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Additional Observations */}
           <div>
