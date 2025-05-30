@@ -17,6 +17,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionId, setSessionId] = useState(Math.random().toString(36).substring(2, 10));
 
   useEffect(() => {
     // Check for existing user session
@@ -40,7 +41,7 @@ export const AuthProvider = ({ children }) => {
           }
         }
         
-        // Fallback to local storage
+        // Fallback to session storage
         const savedUser = userStorage.getUser();
         if (savedUser) {
           setUser(savedUser);
@@ -67,8 +68,11 @@ export const AuthProvider = ({ children }) => {
           auditStorage.addAuditEntry({
             action: 'LOGIN',
             user: response.user.name,
-            details: `Usuario ${response.user.name} inició sesión`
+            details: `Usuario ${response.user.name} inició sesión [Sesión: ${sessionId}]`
           });
+          
+          // Store session ID to identify this particular session
+          sessionStorage.setItem('sessionId', sessionId);
           
           return { success: true, user: response.user };
         }
@@ -77,7 +81,7 @@ export const AuthProvider = ({ children }) => {
         // Fallback to local storage if API fails
       }
       
-      // Fallback to localStorage login
+      // Fallback to sessionStorage login
       const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
       
       // Find user with matching credentials
@@ -93,11 +97,14 @@ export const AuthProvider = ({ children }) => {
       setUser(userWithoutPassword);
       userStorage.setUser(userWithoutPassword);
       
+      // Store session ID to identify this particular session
+      sessionStorage.setItem('sessionId', sessionId);
+      
       // Add audit log entry
       auditStorage.addAuditEntry({
         action: 'LOGIN',
         user: userWithoutPassword.name,
-        details: `Usuario ${userWithoutPassword.name} inició sesión`
+        details: `Usuario ${userWithoutPassword.name} inició sesión [Sesión: ${sessionId}]`
       });
 
       return { success: true, user: userWithoutPassword };
@@ -109,11 +116,13 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       if (user) {
+        const currentSessionId = sessionStorage.getItem('sessionId');
+        
         // Add audit log entry
         auditStorage.addAuditEntry({
           action: 'LOGOUT',
           user: user.name,
-          details: `Usuario ${user.name} cerró sesión`
+          details: `Usuario ${user.name} cerró sesión [Sesión: ${currentSessionId || sessionId}]`
         });
         
         // Try to logout via API
@@ -127,9 +136,11 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Always clear user state and local storage
+      // Always clear user state and session storage
       setUser(null);
       userStorage.removeUser();
+      // Generate a new session ID for next login
+      setSessionId(Math.random().toString(36).substring(2, 10));
     }
   };
 
@@ -138,6 +149,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     loading,
+    sessionId,
     isAuthenticated: !!user,
     isAdmin: user?.role === 'ADMIN' || user?.role === 'admin',
     isRepartidor: user?.role === 'REPARTIDOR' || user?.role === 'repartidor',

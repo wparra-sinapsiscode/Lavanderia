@@ -33,12 +33,15 @@ const processQueue = (error, token = null) => {
 // Request interceptor for adding auth token
 api.interceptors.request.use(
   (config) => {
-    // Get token from local storage
-    const token = localStorage.getItem('accessToken');
+    // Get token from session storage
+    const token = sessionStorage.getItem('accessToken');
     
     // If token exists, add authorization header
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('Adding auth token to request:', config.url);
+    } else {
+      console.log('No auth token found for request:', config.url);
     }
     
     return config;
@@ -77,22 +80,27 @@ api.interceptors.response.use(
       
       try {
         // Try to refresh the token
-        const refreshToken = localStorage.getItem('refreshToken');
+        const refreshToken = sessionStorage.getItem('refreshToken');
         
         if (!refreshToken) {
           throw new Error('No refresh token available');
         }
         
+        console.log('Intentando renovar token con:', refreshToken);
+        
         const response = await axios.post(`${API_URL}/auth/refresh-token`, {
           refreshToken
         });
         
+        console.log('Respuesta refresh token:', response.data);
+        
         if (response.data.success && response.data.accessToken) {
           // Store the new tokens
-          localStorage.setItem('accessToken', response.data.accessToken);
+          sessionStorage.setItem('accessToken', response.data.accessToken);
+          console.log('Nuevo token guardado:', response.data.accessToken);
           
           if (response.data.refreshToken) {
-            localStorage.setItem('refreshToken', response.data.refreshToken);
+            sessionStorage.setItem('refreshToken', response.data.refreshToken);
           }
           
           // Update authorization header and retry the request

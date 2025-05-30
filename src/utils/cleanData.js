@@ -18,8 +18,8 @@ export const cleanAllLocalData = () => {
     localStorage.removeItem(APP_CONFIG.STORAGE_KEYS.GUESTS);
     
     // También eliminar los tokens de autenticación
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+    sessionStorage.removeItem('accessToken');
+    sessionStorage.removeItem('refreshToken');
     
     console.log('🧹 Todos los datos locales han sido eliminados');
     return true;

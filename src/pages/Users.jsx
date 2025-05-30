@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { storage } from '../utils/storage';
-import { generateId } from '../utils';
-import { APP_CONFIG, ZONES } from '../constants';
+import userService from '../services/user.service';
+import { ZONES } from '../constants';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -30,84 +29,150 @@ const Users = () => {
     loadUsers();
   }, [isAdmin]);
 
-  const loadUsers = () => {
-    const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    setUsers(allUsers);
-    
-    setStats({
-      totalUsers: allUsers.length,
-      admins: allUsers.filter(u => u.role === 'admin').length,
-      repartidores: allUsers.filter(u => u.role === 'repartidor').length,
-      activeUsers: allUsers.filter(u => u.status === 'active').length
-    });
-  };
-
-  const handleCreateUser = (userData) => {
-    const newUser = {
-      id: generateId(),
-      ...userData,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      createdBy: user.id,
-      lastLogin: null
-    };
-
-    const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    
-    // Check if email already exists
-    if (allUsers.some(u => u.email === userData.email)) {
-      error('Email Duplicado', 'Ya existe un usuario con este email');
-      return;
+  const loadUsers = async () => {
+    try {
+      const response = await userService.getUsers();
+      console.log('Respuesta completa de loadUsers:', response);
+      
+      if (response && response.success) {
+        const allUsers = response.data || [];
+        setUsers(allUsers);
+        
+        setStats({
+          totalUsers: response.total || allUsers.length,
+          admins: allUsers.filter(u => u.role === 'ADMIN').length,
+          repartidores: allUsers.filter(u => u.role === 'REPARTIDOR').length,
+          activeUsers: allUsers.filter(u => u.active).length
+        });
+      } else {
+        error('Error', response?.message || 'No se pudieron cargar los usuarios');
+      }
+    } catch (err) {
+      console.error('Error loading users:', err);
+      const errorMessage = err.response?.data?.message || err.message || 'Error desconocido';
+      error('Error', 'Error al cargar los usuarios: ' + errorMessage);
+      
+      // Si es un error de autenticación, podemos intentar refrescar el token manualmente
+      if (err.response?.status === 401) {
+        console.log('Error de autenticación. Intentando renovar sesión...');
+        // Aquí se podría implementar un intento manual de refresh token
+      }
     }
-
-    allUsers.push(newUser);
-    storage.set(APP_CONFIG.STORAGE_KEYS.USERS, allUsers);
-    
-    loadUsers();
-    setShowCreateForm(false);
-    success('Usuario Creado', `${newUser.name} ha sido agregado al sistema`);
   };
 
-  const handleUpdateUser = (userId, userData) => {
-    const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    const updatedUsers = allUsers.map(u => 
-      u.id === userId ? { ...u, ...userData, updatedAt: new Date().toISOString() } : u
-    );
-    
-    storage.set(APP_CONFIG.STORAGE_KEYS.USERS, updatedUsers);
-    loadUsers();
-    setEditingUser(null);
-    success('Usuario Actualizado', 'Los datos del usuario han sido actualizados');
+  const handleCreateUser = async (userData) => {
+    try {
+      // Adaptar datos a formato de API
+      const apiUserData = {
+        name: userData.name,
+        email: userData.email,
+        password: userData.password,
+        role: userData.role.toUpperCase(),
+        zone: userData.zone,
+        phone: userData.phone || null
+      };
+      
+      const response = await userService.createUser(apiUserData);
+      
+      if (response.success) {
+        loadUsers();
+        setShowCreateForm(false);
+        success('Usuario Creado', `${userData.name} ha sido agregado al sistema`);
+      } else {
+        error('Error', response.message || 'Error al crear el usuario');
+      }
+    } catch (err) {
+      console.error('Error creating user:', err);
+      
+      // Manejar errores comunes
+      if (err.message && err.message.includes('duplicate key')) {
+        error('Error', 'Ya existe un usuario con este email');
+      } else {
+        error('Error', 'Error al crear el usuario: ' + (err.message || 'Error desconocido'));
+      }
+    }
   };
 
-  const handleDeleteUser = (userId) => {
+  const handleUpdateUser = async (userId, userData) => {
+    try {
+      // Adaptar datos a formato de API
+      const apiUserData = {
+        name: userData.name,
+        email: userData.email,
+        role: userData.role.toUpperCase(),
+        zone: userData.zone,
+        phone: userData.phone || null
+      };
+      
+      // Solo incluir password si se proporcionó
+      if (userData.password) {
+        apiUserData.password = userData.password;
+      }
+      
+      const response = await userService.updateUser(userId, apiUserData);
+      
+      if (response.success) {
+        loadUsers();
+        setEditingUser(null);
+        success('Usuario Actualizado', 'Los datos del usuario han sido actualizados');
+      } else {
+        error('Error', response.message || 'Error al actualizar el usuario');
+      }
+    } catch (err) {
+      console.error('Error updating user:', err);
+      error('Error', 'Error al actualizar el usuario: ' + (err.message || 'Error desconocido'));
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
     if (userId === user.id) {
       error('Error', 'No puedes eliminar tu propio usuario');
       return;
     }
 
     if (window.confirm('¿Estás seguro de eliminar este usuario?')) {
-      const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-      const updatedUsers = allUsers.filter(u => u.id !== userId);
-      
-      storage.set(APP_CONFIG.STORAGE_KEYS.USERS, updatedUsers);
-      loadUsers();
-      success('Usuario Eliminado', 'El usuario ha sido eliminado del sistema');
+      try {
+        const response = await userService.deleteUser(userId);
+        
+        if (response.success) {
+          loadUsers();
+          success('Usuario Eliminado', 'El usuario ha sido desactivado en el sistema');
+        } else {
+          error('Error', response.message || 'Error al eliminar el usuario');
+        }
+      } catch (err) {
+        console.error('Error deleting user:', err);
+        error('Error', 'Error al eliminar el usuario: ' + (err.message || 'Error desconocido'));
+      }
     }
   };
 
-  const toggleUserStatus = (userId) => {
-    const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    const updatedUsers = allUsers.map(u => 
-      u.id === userId ? { 
-        ...u, 
-        status: u.status === 'active' ? 'inactive' : 'active',
-        updatedAt: new Date().toISOString()
-      } : u
-    );
-    
-    storage.set(APP_CONFIG.STORAGE_KEYS.USERS, updatedUsers);
-    loadUsers();
+  const toggleUserStatus = async (userId) => {
+    try {
+      // Primero obtenemos el usuario actual para conocer su estado
+      const userResponse = await userService.getUserById(userId);
+      
+      if (userResponse.success && userResponse.data) {
+        const currentUser = userResponse.data;
+        
+        // Enviar el estado contrario al actual
+        const response = await userService.updateUser(userId, {
+          active: !currentUser.active
+        });
+        
+        if (response.success) {
+          loadUsers();
+          success('Estado Actualizado', `El usuario ha sido ${currentUser.active ? 'desactivado' : 'activado'}`);
+        } else {
+          error('Error', response.message || 'Error al cambiar el estado del usuario');
+        }
+      } else {
+        error('Error', 'No se pudo obtener la información del usuario');
+      }
+    } catch (err) {
+      console.error('Error toggling user status:', err);
+      error('Error', 'Error al cambiar el estado del usuario: ' + (err.message || 'Error desconocido'));
+    }
   };
 
   if (!isAdmin) {
@@ -246,11 +311,11 @@ const Users = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        userData.role === 'admin' 
+                        userData.role === 'ADMIN' || userData.role === 'admin'
                           ? 'bg-red-100 text-red-800' 
                           : 'bg-green-100 text-green-800'
                       }`}>
-                        {userData.role === 'admin' ? 'Administrador' : 'Repartidor'}
+                        {userData.role === 'ADMIN' || userData.role === 'admin' ? 'Administrador' : 'Repartidor'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -260,12 +325,12 @@ const Users = () => {
                       <button
                         onClick={() => toggleUserStatus(userData.id)}
                         className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${
-                          userData.status === 'active'
+                          userData.active
                             ? 'bg-green-100 text-green-800 hover:bg-green-200'
                             : 'bg-red-100 text-red-800 hover:bg-red-200'
                         }`}
                       >
-                        {userData.status === 'active' ? (
+                        {userData.active ? (
                           <>
                             <Eye className="h-3 w-3 mr-1" />
                             Activo
@@ -279,7 +344,7 @@ const Users = () => {
                       </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {userData.lastLogin ? new Date(userData.lastLogin).toLocaleDateString('es-PE') : 'Nunca'}
+                      {userData.updatedAt ? new Date(userData.updatedAt).toLocaleDateString('es-PE') : 'No disponible'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
@@ -334,7 +399,7 @@ const UserForm = ({ user, onClose, onSubmit }) => {
     name: user?.name || '',
     email: user?.email || '',
     password: '',
-    role: user?.role || 'repartidor',
+    role: user?.role || 'REPARTIDOR',
     zone: user?.zone || '',
     phone: user?.phone || ''
   });
@@ -395,12 +460,12 @@ const UserForm = ({ user, onClose, onSubmit }) => {
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               >
-                <option value="repartidor">Repartidor</option>
-                <option value="admin">Administrador</option>
+                <option value="REPARTIDOR">Repartidor</option>
+                <option value="ADMIN">Administrador</option>
               </select>
             </div>
             
-            {formData.role === 'repartidor' && (
+            {formData.role === 'REPARTIDOR' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Zona

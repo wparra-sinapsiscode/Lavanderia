@@ -6,7 +6,7 @@ import api from './api';
  */
 class AuthService {
   /**
-   * Login user and save tokens to localStorage
+   * Login user and save tokens to sessionStorage
    * @param {string} email - User email
    * @param {string} password - User password
    * @returns {Promise<Object>} User data and tokens
@@ -20,15 +20,18 @@ class AuthService {
       
       if (response.data.success) {
         if (response.data.accessToken) {
-          localStorage.setItem('accessToken', response.data.accessToken);
+          sessionStorage.setItem('accessToken', response.data.accessToken);
+          console.log('Token guardado en sessionStorage:', response.data.accessToken);
+        } else {
+          console.warn('No se recibió accessToken del servidor');
         }
         
         if (response.data.refreshToken) {
-          localStorage.setItem('refreshToken', response.data.refreshToken);
+          sessionStorage.setItem('refreshToken', response.data.refreshToken);
         }
         
         if (response.data.data) {
-          localStorage.setItem('user', JSON.stringify(response.data.data));
+          sessionStorage.setItem('user', JSON.stringify(response.data.data));
           return { success: true, user: response.data.data };
         }
       }
@@ -46,7 +49,7 @@ class AuthService {
    */
   async refreshToken() {
     try {
-      const refreshToken = localStorage.getItem('refreshToken');
+      const refreshToken = sessionStorage.getItem('refreshToken');
       
       if (!refreshToken) {
         throw new Error('No refresh token available');
@@ -58,11 +61,11 @@ class AuthService {
       
       if (response.data.success) {
         if (response.data.accessToken) {
-          localStorage.setItem('accessToken', response.data.accessToken);
+          sessionStorage.setItem('accessToken', response.data.accessToken);
         }
         
         if (response.data.refreshToken) {
-          localStorage.setItem('refreshToken', response.data.refreshToken);
+          sessionStorage.setItem('refreshToken', response.data.refreshToken);
         }
       }
       
@@ -80,25 +83,25 @@ class AuthService {
   }
   
   /**
-   * Logout user and remove tokens from localStorage
+   * Logout user and remove tokens from sessionStorage
    * @returns {Promise<Object>} Success message
    */
   async logout() {
     try {
       // Get the refresh token to invalidate just this session
-      const refreshToken = localStorage.getItem('refreshToken');
+      const refreshToken = sessionStorage.getItem('refreshToken');
       
       // Only remove the current token, not all sessions
       const response = await api.post('/auth/logout', {
         refresh_token: refreshToken
       });
       
-      // Clear local storage
+      // Clear session storage
       this.clearAuthData();
       
       return response.data;
     } catch (error) {
-      // Clear local storage even if API call fails
+      // Clear session storage even if API call fails
       this.clearAuthData();
       
       console.error('Logout error:', error);
@@ -107,12 +110,12 @@ class AuthService {
   }
   
   /**
-   * Clear authentication data from localStorage
+   * Clear authentication data from sessionStorage
    */
   clearAuthData() {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
+    sessionStorage.removeItem('accessToken');
+    sessionStorage.removeItem('refreshToken');
+    sessionStorage.removeItem('user');
   }
   
   /**
@@ -122,6 +125,11 @@ class AuthService {
    */
   async register(userData) {
     try {
+      // Asegurarse que el rol esté en formato correcto (MAYÚSCULAS)
+      if (userData.role) {
+        userData.role = userData.role.toUpperCase();
+      }
+      
       const response = await api.post('/auth/register', userData);
       return response.data;
     } catch (error) {
@@ -139,8 +147,8 @@ class AuthService {
       const response = await api.get('/auth/me');
       
       if (response.data.success && response.data.data) {
-        // Update local storage with latest user data
-        localStorage.setItem('user', JSON.stringify(response.data.data));
+        // Update session storage with latest user data
+        sessionStorage.setItem('user', JSON.stringify(response.data.data));
       }
       
       return response.data;
@@ -172,10 +180,10 @@ class AuthService {
     try {
       const response = await api.put('/auth/me', profileData);
       
-      // Update local storage if profile was updated successfully
+      // Update session storage if profile was updated successfully
       if (response.data.success && response.data.data) {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        localStorage.setItem('user', JSON.stringify({
+        const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+        sessionStorage.setItem('user', JSON.stringify({
           ...user,
           ...response.data.data
         }));
@@ -321,15 +329,15 @@ class AuthService {
    * @returns {boolean} Logged in status
    */
   isLoggedIn() {
-    return !!localStorage.getItem('accessToken');
+    return !!sessionStorage.getItem('accessToken');
   }
   
   /**
-   * Get current user from localStorage
+   * Get current user from sessionStorage
    * @returns {Object|null} User data or null
    */
   getCurrentUser() {
-    const user = localStorage.getItem('user');
+    const user = sessionStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   }
   
@@ -365,7 +373,7 @@ class AuthService {
    * @returns {string|null} Access token or null
    */
   getAccessToken() {
-    return localStorage.getItem('accessToken');
+    return sessionStorage.getItem('accessToken');
   }
   
   /**
@@ -373,7 +381,7 @@ class AuthService {
    * @returns {string|null} Refresh token or null
    */
   getRefreshToken() {
-    return localStorage.getItem('refreshToken');
+    return sessionStorage.getItem('refreshToken');
   }
 }
 

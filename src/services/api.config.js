@@ -2,14 +2,14 @@
  * API Configuration for Fumy Limp Frontend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 /**
  * Get authorization header with JWT token
  * @returns {Object} Headers object with Authorization
  */
 const getAuthHeader = () => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('accessToken');
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 

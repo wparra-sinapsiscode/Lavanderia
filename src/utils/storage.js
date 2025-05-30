@@ -1,43 +1,43 @@
 import { APP_CONFIG } from '../constants';
 
-// Generic localStorage utilities
+// Generic sessionStorage utilities
 export const storage = {
   get: (key) => {
     try {
-      const item = localStorage.getItem(key);
+      const item = sessionStorage.getItem(key);
       return item ? JSON.parse(item) : null;
     } catch (error) {
-      console.error(`Error getting ${key} from localStorage:`, error);
+      console.error(`Error getting ${key} from sessionStorage:`, error);
       return null;
     }
   },
 
   set: (key, value) => {
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      sessionStorage.setItem(key, JSON.stringify(value));
       return true;
     } catch (error) {
-      console.error(`Error setting ${key} in localStorage:`, error);
+      console.error(`Error setting ${key} in sessionStorage:`, error);
       return false;
     }
   },
 
   remove: (key) => {
     try {
-      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
       return true;
     } catch (error) {
-      console.error(`Error removing ${key} from localStorage:`, error);
+      console.error(`Error removing ${key} from sessionStorage:`, error);
       return false;
     }
   },
 
   clear: () => {
     try {
-      localStorage.clear();
+      sessionStorage.clear();
       return true;
     } catch (error) {
-      console.error('Error clearing localStorage:', error);
+      console.error('Error clearing sessionStorage:', error);
       return false;
     }
   }
