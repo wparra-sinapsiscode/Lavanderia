@@ -617,11 +617,6 @@ const Pickup = () => {
                               service.hotel.zone : 
                               (service.hotelZone || "No disponible")}
                           </span>
-                          {isAdmin && service.repartidor && (
-                            <span className="text-xs text-gray-500">
-                              (Asignado a: {typeof service.repartidor === 'object' ? service.repartidor.name : service.repartidor})
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

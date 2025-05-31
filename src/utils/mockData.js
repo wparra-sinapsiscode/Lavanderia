@@ -25,7 +25,7 @@ export const loadMockServices = () => {
       "signature": null,
       "collectorName": null,
       "geolocation": null,
-      "repartidorId": "1dadd5b3-006c-4776-9dfb-ca687698e6a5",
+      "repartidorId": null, // Ya no asignamos repartidor específico
       "deliveryRepartidorId": null,
       "partialDeliveryPercentage": null,
       "price": null,
@@ -42,9 +42,7 @@ export const loadMockServices = () => {
         "name": "jstrjsjstj",
         "zone": "ESTE"
       },
-      "repartidor": {
-        "name": "Repartidor ESTE"
-      }
+      "repartidor": null // Ya no incluimos un repartidor
     },
     {
       "id": "a9b2d867-29b3-49de-af3d-2fe461f9982f",
@@ -492,6 +490,27 @@ export const loadMockRepartidores = () => {
 };
 
 /**
+ * Elimina los repartidores asignados de todos los servicios
+ * para usar el nuevo modelo basado en zonas
+ */
+export const removeRepartidoresFromServices = () => {
+  const services = serviceStorage.getServices();
+  
+  // Recorrer todos los servicios y quitar las asignaciones a repartidores
+  const updatedServices = services.map(service => ({
+    ...service,
+    repartidorId: null,  // Eliminar asignación específica a repartidor
+    repartidor: null     // Eliminar referencia al objeto repartidor
+  }));
+  
+  // Guardar los servicios actualizados
+  serviceStorage.setServices(updatedServices);
+  
+  console.log(`🔄 Repartidores eliminados de ${updatedServices.length} servicios para usar modelo por zonas`);
+  return updatedServices;
+};
+
+/**
  * Inicializa todos los datos de prueba de una vez
  */
 export const initMockData = () => {
@@ -499,6 +518,7 @@ export const initMockData = () => {
   loadMockHotels();
   loadMockRepartidores();
   addZoneInfoToServices();
+  removeRepartidoresFromServices(); // Eliminar repartidores asignados para usar modelo por zonas
   
   console.log('✅ Todos los datos de prueba han sido inicializados');
 };

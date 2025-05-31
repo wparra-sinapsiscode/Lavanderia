@@ -75,9 +75,21 @@ const RepartidorDashboard = () => {
   const loadLocalRepartidorData = () => {
     const allServices = serviceStorage.getServices();
     
-    // Filter services for this repartidor
-    const userServices = allServices.filter(s => s.repartidorId === user.id);
-    const unassignedServices = allServices.filter(s => !s.repartidorId && s.status === SERVICE_STATUS.PENDING_PICKUP);
+    // Filter services for this repartidor - updated to support zone-based assignment
+    // 1. Services specifically assigned to this repartidor
+    const assignedServices = allServices.filter(s => s.repartidorId === user.id);
+    
+    // 2. Services from the repartidor's zone that have no repartidor assigned and are pending pickup
+    const zoneServices = serviceStorage.getServicesByZone(user.zone);
+    const unassignedZoneServices = zoneServices.filter(s => 
+      !s.repartidorId && s.status === SERVICE_STATUS.PENDING_PICKUP
+    );
+    
+    // Combine both sets for a complete view of the repartidor's responsibilities
+    const userServices = [...assignedServices];
+    const uniqueUnassignedServices = unassignedZoneServices.filter(
+      zoneService => !assignedServices.some(assigned => assigned.id === zoneService.id)
+    );
     
     // Calculate stats
     const today = new Date().toDateString();
@@ -86,25 +98,26 @@ const RepartidorDashboard = () => {
       s.deliveryDate && new Date(s.deliveryDate).toDateString() === today
     ).length;
 
+    // Now pendingPickups includes both assigned to this repartidor and unassigned in their zone
     const pendingPickups = userServices.filter(s => 
       s.status === SERVICE_STATUS.PENDING_PICKUP
-    ).length + unassignedServices.length;
+    ).length + uniqueUnassignedServices.length;
 
     const pendingDeliveries = userServices.filter(s => 
       s.status === SERVICE_STATUS.READY_FOR_DELIVERY
     ).length;
 
-    const totalEarnings = userServices.reduce((sum, s) => sum + s.price, 0);
+    const totalEarnings = userServices.reduce((sum, s) => sum + (s.price || 0), 0);
 
     // This week services
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     const thisWeekServices = userServices.filter(s => 
-      new Date(s.timestamp) >= oneWeekAgo
+      new Date(s.timestamp || s.createdAt) >= oneWeekAgo
     ).length;
 
     setStats({
-      myServices: userServices.length,
+      myServices: userServices.length + uniqueUnassignedServices.length,
       pendingPickups,
       pendingDeliveries,
       completedToday,
@@ -112,18 +125,33 @@ const RepartidorDashboard = () => {
       thisWeekServices
     });
 
-    // Set recent services (last 8)
-    const recentServices = userServices
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    // Set recent services (last 8) - include both assigned and zone services
+    const combinedServices = [...userServices, ...uniqueUnassignedServices];
+    const recentServices = combinedServices
+      .sort((a, b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt))
       .slice(0, 8);
     setMyServices(recentServices);
 
-    // Set urgent pickups (unassigned + oldest pending)
-    const urgent = [
-      ...unassignedServices.slice(0, 3),
-      ...userServices.filter(s => s.status === 'pendiente_recojo').slice(0, 2)
-    ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // Set urgent pickups with zone-based prioritization
+    // First, get unassigned services from the repartidor's zone
+    const zoneUrgentPickups = uniqueUnassignedServices
+      .filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP)
+      .sort((a, b) => new Date(a.timestamp || a.createdAt) - new Date(b.timestamp || b.createdAt))
+      .slice(0, 3);
+    
+    // Then add the repartidor's assigned pickups
+    const assignedUrgentPickups = userServices
+      .filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP)
+      .sort((a, b) => new Date(a.timestamp || a.createdAt) - new Date(b.timestamp || b.createdAt))
+      .slice(0, 2);
+      
+    // Combine and sort by timestamp
+    const urgent = [...zoneUrgentPickups, ...assignedUrgentPickups]
+      .sort((a, b) => new Date(a.timestamp || a.createdAt) - new Date(b.timestamp || b.createdAt));
+    
     setUrgentPickups(urgent);
+    
+    console.log(`Dashboard cargado para zona ${user.zone}: ${userServices.length} servicios asignados, ${uniqueUnassignedServices.length} no asignados en la zona`);
   };
 
   const StatCard = ({ title, value, icon: Icon, color = 'blue', subtitle, action }) => (
@@ -171,7 +199,7 @@ const RepartidorDashboard = () => {
               Repartidor - Zona {user?.zone}
             </p>
             <p className="text-blue-200 text-base mt-1">
-              ¡Tienes {stats.pendingPickups} recojos + {stats.pendingDeliveries} entregas pendientes!
+              ¡Tienes {stats.pendingPickups} recojos ({stats.pendingPickups > 0 ? 'incluyendo servicios de tu zona' : ''}) + {stats.pendingDeliveries} entregas pendientes!
             </p>
           </div>
           <User className="h-16 w-16" />
@@ -259,18 +287,38 @@ const RepartidorDashboard = () => {
                         </p>
                         <p className="text-sm text-gray-600">
                           {service.hotel} - Hab. {service.roomNumber}
+                          {!service.repartidorId && (
+                            <span className="inline-flex ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                              Zona {typeof service.hotel === 'object' ? service.hotel.zone : service.hotelZone || user.zone}
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatDate(service.timestamp)}
+                          {formatDate(service.timestamp || service.createdAt)}
                         </p>
                       </div>
                       <div className="flex items-center space-x-2">
                         <span className="text-sm bg-red-100 text-red-800 px-2 py-1 rounded">
                           {service.bagCount} bolsas
                         </span>
-                        <Button size="sm" onClick={() => window.location.href = '/pickup'}>
-                          <Truck className="h-4 w-4" />
-                        </Button>
+                        {!service.repartidorId ? (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            title="Tomar servicio" 
+                            onClick={() => window.location.href = '/pickup'}
+                            className="border-blue-400 text-blue-600 hover:bg-blue-50"
+                          >
+                            <UserCheck className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="sm" 
+                            onClick={() => window.location.href = '/pickup'}
+                          >
+                            <Truck className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -316,11 +364,16 @@ const RepartidorDashboard = () => {
                         <p className="font-medium text-gray-900">
                           {service.guestName}
                         </p>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 flex items-center">
                           {service.hotel} - Hab. {service.roomNumber}
+                          {!service.repartidorId && service.status === SERVICE_STATUS.PENDING_PICKUP && (
+                            <span className="inline-flex ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                              De tu zona
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatDate(service.timestamp)}
+                          {formatDate(service.timestamp || service.createdAt)}
                         </p>
                       </div>
                       <div className="text-right">
@@ -331,6 +384,11 @@ const RepartidorDashboard = () => {
                           <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded border ${getServiceTypeColor(service)}`}>
                             {getServiceTypeText(service)}
                           </span>
+                          {!service.repartidorId && service.status === SERVICE_STATUS.PENDING_PICKUP && (
+                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded border border-blue-300 text-blue-700 bg-blue-50">
+                              No asignado
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm font-medium text-gray-900 mt-1">
                           {formatCurrency(service.price)}

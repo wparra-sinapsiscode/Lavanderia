@@ -350,22 +350,47 @@ class ServiceService {
       const user = userStorage.getUser();
       
       if (user) {
-        // Obtener servicios filtrados por repartidor
-        const services = serviceStorage.getServicesByRepartidor(user.id);
+        let filteredServices = [];
+        
+        if (user.role === 'REPARTIDOR') {
+          // Con el nuevo enfoque basado en zona, el repartidor debe ver:
+          // 1. Servicios específicamente asignados a él
+          const assignedServices = serviceStorage.getServicesByRepartidor(user.id);
+          
+          // 2. Servicios de su zona que no tienen repartidor asignado y están pendientes de recojo
+          const zoneServices = serviceStorage.getServicesByZone(user.zone);
+          const unassignedZoneServices = zoneServices.filter(s => 
+            !s.repartidorId && s.status === SERVICE_STATUS.PENDING_PICKUP
+          );
+          
+          // Combinar ambos conjuntos sin duplicados
+          const serviceMap = new Map();
+          
+          // Primero añadir los asignados específicamente
+          assignedServices.forEach(service => {
+            serviceMap.set(service.id, service);
+          });
+          
+          // Luego añadir los no asignados de la zona
+          unassignedZoneServices.forEach(service => {
+            if (!serviceMap.has(service.id)) {
+              serviceMap.set(service.id, service);
+            }
+          });
+          
+          // Convertir el mapa a array
+          filteredServices = Array.from(serviceMap.values());
+        } else {
+          // Para administradores y otros roles, mostrar todos los servicios
+          filteredServices = serviceStorage.getServices();
+        }
         
         // Aplicar filtros adicionales si se proporcionan
-        let filteredServices = services;
         if (filters.status) {
           filteredServices = filteredServices.filter(s => s.status === filters.status);
         }
-        if (user.role === 'REPARTIDOR') {
-          filteredServices = filteredServices.filter(s => {
-            const serviceZone = s.hotel?.zone || s.hotelZone;
-            return serviceZone === user.zone;
-          });
-        }
         
-        console.log(`Fallback local: ${filteredServices.length} servicios encontrados para el usuario ${user.name}`);
+        console.log(`Fallback local: ${filteredServices.length} servicios encontrados para el usuario ${user.name} (zona: ${user.zone || 'N/A'})`);
         
         return {
           success: true,
