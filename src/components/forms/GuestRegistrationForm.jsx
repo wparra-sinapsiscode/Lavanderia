@@ -94,36 +94,22 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
         }
       }
       
-      // Auto-seleccionar repartidor basado en la zona del hotel
-      if (hotel && hotel.zone && repartidores.length > 0) {
-        // Buscar repartidores que coincidan con la zona del hotel
-        const repartidoresDeZona = repartidores.filter(r => r.zone === hotel.zone);
+      // Ya no auto-seleccionamos un repartidor específico, ahora dejamos
+      // que el servicio se asigne a la zona del hotel y cualquier repartidor
+      // de esa zona podrá tomar el servicio.
+      if (hotel && hotel.zone) {
+        // Limpiar cualquier repartidor que pudiera estar seleccionado
+        setValue('repartidorId', '');
+        setSuggestedRepartidor(null);
         
-        if (repartidoresDeZona.length > 0) {
-          // Tomar el primer repartidor de la zona
-          const repartidorSugerido = repartidoresDeZona[0];
-          setSuggestedRepartidor(repartidorSugerido);
-          setValue('repartidorId', repartidorSugerido.id);
-          
-          // Solo mostrar notificación después del renderizado inicial y cuando realmente cambia la selección
-          if (!initialRender) {
-            // Usar setTimeout para evitar el ciclo de actualizaciones
-            setTimeout(() => {
-              showNotification({
-                type: 'info',
-                message: `Repartidor ${repartidorSugerido.name} seleccionado automáticamente (Zona ${hotel.zone})`
-              });
-            }, 0);
-          }
-        } else if (!initialRender) {
-          // Si no hay repartidores en esa zona específica, mostrar advertencia (pero no en el renderizado inicial)
+        // Mostrar notificación sobre la zona a la que se asignará el servicio
+        if (!initialRender) {
           setTimeout(() => {
             showNotification({
-              type: 'warning',
-              message: `No hay repartidores asignados a la zona ${hotel.zone}. Seleccione manualmente.`
+              type: 'info',
+              message: `El servicio se asignará a la zona ${hotel.zone}. Cualquier repartidor de esta zona podrá tomarlo.`
             });
           }, 0);
-          setSuggestedRepartidor(null);
         }
       }
     }
@@ -201,21 +187,8 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
         return;
       }
 
-      // Verificar que tengamos un repartidor asignado (ahora automáticamente)
-      const assignedRepartidor = repartidores.find(r => r.id === data.repartidorId);
-      if (!assignedRepartidor) {
-        // Intentar usar el repartidor sugerido si no hay uno en el formulario
-        if (suggestedRepartidor) {
-          data.repartidorId = suggestedRepartidor.id;
-          console.log(`Usando repartidor sugerido: ${suggestedRepartidor.name} (ID: ${suggestedRepartidor.id})`);
-        } else {
-          showNotification({
-            type: 'error',
-            message: 'No hay repartidor disponible para esta zona'
-          });
-          return;
-        }
-      }
+      // Ya no requerimos un repartidor asignado, solo la zona del hotel
+      // Los repartidores verán y podrán tomar servicios de su zona
       
       // Determinar prioridad final (manual o automática)
       let finalPriority;
@@ -240,7 +213,8 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
         // Enviar la prioridad tal como está (ya está en mayúsculas)
         priority: finalPriority,
         estimatedPickupDate: estimatedPickupDate.toISOString(),
-        repartidorId: String(assignedRepartidor.id).trim(),
+        // Ya no enviamos repartidorId, el servicio quedará asignado a la zona
+        repartidorId: null,
         pickupTimeSlot: '9:00 - 11:00', // Horario fijo para evitar datos aleatorios
         specialInstructions: ''
       };
@@ -267,12 +241,12 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
       const newService = guestResponse.data.service;
       
       // Mostrar notificación de éxito
-      const repartidorInfo = `Asignado a ${assignedRepartidor.name} (Zona ${assignedRepartidor.zone}).`;
+      const zoneInfo = `Disponible para repartidores de la zona ${selectedHotel.zone}.`;
       const roomInfo = data.roomNumber ? `Habitación: ${data.roomNumber}.` : '';
       
       showNotification({
         type: 'success',
-        message: `Orden para ${data.guestName} creada exitosamente. ${roomInfo} ${data.bagCount} bolsas para recoger. ${repartidorInfo}`
+        message: `Orden para ${data.guestName} creada exitosamente. ${roomInfo} ${data.bagCount} bolsas para recoger. ${zoneInfo}`
       });
 
       if (onServiceCreated) {
@@ -375,46 +349,28 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
             </div>
           )}
 
-          {/* Campo oculto para el repartidor (asignado automáticamente) */}
+          {/* Campo oculto para el repartidor (ya no es requerido) */}
           <input
             type="hidden"
-            {...register('repartidorId', {
-              required: 'Debe asignar un repartidor'
-            })}
+            {...register('repartidorId')}
           />
           
-          {/* Información del repartidor asignado (solo visualización) */}
-          {suggestedRepartidor && (
-            <div className="bg-green-50 p-4 rounded-lg">
-              <h4 className="font-medium text-green-800 mb-2">Repartidor Asignado Automáticamente</h4>
+          {/* Información sobre la asignación por zona */}
+          {selectedHotel && selectedHotel.zone && (
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="font-medium text-blue-800 mb-2">Asignación por Zona</h4>
               <div className="flex items-center">
-                <div className="p-2 rounded-full bg-green-100 mr-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+                <div className="p-2 rounded-full bg-blue-100 mr-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                   </svg>
                 </div>
                 <div>
-                  <p className="font-medium text-green-800">{suggestedRepartidor.name}</p>
-                  <p className="text-sm text-green-600">Zona {suggestedRepartidor.zone}</p>
+                  <p className="font-medium text-blue-800">Zona: {selectedHotel.zone}</p>
+                  <p className="text-sm text-blue-600">Este servicio estará disponible para cualquier repartidor de esta zona</p>
                 </div>
               </div>
-              <p className="text-xs text-green-700 mt-2">Asignado automáticamente basado en la zona del hotel</p>
-            </div>
-          )}
-          
-          {!suggestedRepartidor && selectedHotel && (
-            <div className="bg-amber-50 p-4 rounded-lg">
-              <div className="flex items-center">
-                <div className="p-2 rounded-full bg-amber-100 mr-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-600" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="font-medium text-amber-800">No hay repartidores para la zona {selectedHotel.zone}</p>
-                  <p className="text-sm text-amber-600">Contacte al administrador para asignar repartidores a esta zona</p>
-                </div>
-              </div>
+              <p className="text-xs text-blue-700 mt-2">Los repartidores de la zona {selectedHotel.zone} podrán ver y tomar este servicio</p>
             </div>
           )}
 

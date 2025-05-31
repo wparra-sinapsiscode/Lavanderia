@@ -322,30 +322,55 @@ const Pickup = () => {
     });
   };
 
+  // Ya no necesitamos reasignar servicios, ahora se asignan a la zona
+  // Esta función se mantiene solo para compatibilidad con servicios ya asignados anteriormente
   const handleReassignService = (service) => {
     setServiceToReassign(service);
     setShowReassignForm(true);
   };
 
   const handleReassignSubmit = async (newRepartidorId) => {
-    if (!serviceToReassign || !newRepartidorId) return;
+    if (!serviceToReassign) return;
 
-    const selectedRepartidor = repartidores.find(r => r.id === newRepartidorId);
-    if (!selectedRepartidor) return;
+    // Si newRepartidorId está vacío, significa que estamos desasignando el repartidor
+    const isDesassigning = !newRepartidorId;
+    const selectedRepartidor = isDesassigning ? null : repartidores.find(r => r.id === newRepartidorId);
+    
+    if (!isDesassigning && !selectedRepartidor) return;
     
     try {
-      // Primero actualizar en almacenamiento local (para garantizar funcionamiento offline)
-      const localSuccess = serviceStorage.updateService(serviceToReassign.id, {
-        repartidorId: newRepartidorId,
-        repartidor: {
-          id: selectedRepartidor.id,
-          name: selectedRepartidor.name,
-          zone: selectedRepartidor.zone
-        },
-        lastUpdated: new Date().toISOString(),
-        internalNotes: (serviceToReassign.internalNotes || '') + 
-          `\n[${new Date().toLocaleString()}] Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone})`
-      });
+      // Preparar datos de actualización según si estamos asignando o desasignando
+      let updateData;
+      let notesText;
+      
+      if (isDesassigning) {
+        // Desasignar repartidor (volver al modelo basado en zonas)
+        updateData = {
+          repartidorId: null,
+          repartidor: null,
+          lastUpdated: new Date().toISOString(),
+          internalNotes: (serviceToReassign.internalNotes || '') + 
+            `\n[${new Date().toLocaleString()}] Desasignado de repartidor específico. Disponible para cualquier repartidor de la zona.`
+        };
+        notesText = "Desasignado de repartidor específico";
+      } else {
+        // Asignar a un repartidor específico
+        updateData = {
+          repartidorId: newRepartidorId,
+          repartidor: {
+            id: selectedRepartidor.id,
+            name: selectedRepartidor.name,
+            zone: selectedRepartidor.zone
+          },
+          lastUpdated: new Date().toISOString(),
+          internalNotes: (serviceToReassign.internalNotes || '') + 
+            `\n[${new Date().toLocaleString()}] Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone})`
+        };
+        notesText = `Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone})`;
+      }
+      
+      // Primero actualizar en almacenamiento local
+      const localSuccess = serviceStorage.updateService(serviceToReassign.id, updateData);
       
       if (!localSuccess) {
         throw new Error('Error al actualizar servicio en almacenamiento local');
@@ -355,8 +380,8 @@ const Pickup = () => {
       try {
         const apiResponse = await serviceService.updateServiceStatus(serviceToReassign.id, {
           status: serviceToReassign.status, // Mantener el mismo estado
-          repartidorId: newRepartidorId,
-          internalNotes: `Reasignado a ${selectedRepartidor.name} (${selectedRepartidor.zone})`
+          repartidorId: isDesassigning ? null : newRepartidorId,
+          internalNotes: notesText
         });
         
         if (!apiResponse || !apiResponse.success) {
@@ -369,7 +394,9 @@ const Pickup = () => {
       // Actualizar la UI
       showNotification({
         type: 'success',
-        message: `Servicio reasignado a ${selectedRepartidor.name}`
+        message: isDesassigning ? 
+          "Servicio desasignado. Disponible para cualquier repartidor de la zona." : 
+          `Servicio asignado a ${selectedRepartidor.name}`
       });
       
       // Notificar a otros componentes sobre la reasignación
@@ -386,10 +413,10 @@ const Pickup = () => {
       setServiceToReassign(null);
       
     } catch (error) {
-      console.error('Error al reasignar el servicio:', error);
+      console.error('Error al gestionar la asignación del servicio:', error);
       showNotification({
         type: 'error',
-        message: `Error al reasignar: ${error.message || 'Error desconocido'}`
+        message: `Error: ${error.message || 'Error desconocido'}`
       });
     }
   };
@@ -531,7 +558,7 @@ const Pickup = () => {
                       Registro
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Repartidor
+                      Zona
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Acciones
@@ -584,35 +611,18 @@ const Pickup = () => {
                         {formatDate(service.timestamp || service.createdAt || service.pickupDate)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {service.repartidor ? (
-                          <div className="flex items-center space-x-2">
-                            <span>{typeof service.repartidor === 'object' ? service.repartidor.name : service.repartidor}</span>
-                            {isAdmin && (
-                              <Button
-                                size="xs"
-                                variant="ghost"
-                                onClick={() => handleReassignService(service)}
-                                className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
-                                title="Reasignar"
-                              >
-                                <UserCheck className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          isAdmin ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReassignService(service)}
-                              className="text-xs"
-                            >
-                              Asignar repartidor
-                            </Button>
-                          ) : (
-                            <span className="text-gray-400 italic">Sin asignar</span>
-                          )
-                        )}
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">
+                            {typeof service.hotel === 'object' ? 
+                              service.hotel.zone : 
+                              (service.hotelZone || "No disponible")}
+                          </span>
+                          {isAdmin && service.repartidor && (
+                            <span className="text-xs text-gray-500">
+                              (Asignado a: {typeof service.repartidor === 'object' ? service.repartidor.name : service.repartidor})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         {service.status === SERVICE_STATUS.PENDING_PICKUP ? (
@@ -662,15 +672,23 @@ const Pickup = () => {
         </Card>
       )}
 
-      {/* Reassignment Modal */}
+      {/* Reassignment Modal - Solo para compatibilidad con servicios ya asignados anteriormente */}
       {showReassignForm && serviceToReassign && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                {serviceToReassign.repartidorId ? 'Reasignar' : 'Asignar'} Recojo
+                Gestionar Asignación
               </h3>
               <div className="mb-4">
+                <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                  <p className="text-sm text-blue-800 font-medium mb-1">Información de Zona</p>
+                  <p className="text-sm text-blue-600">
+                    Este servicio pertenece a la zona <strong>{typeof serviceToReassign.hotel === 'object' ? serviceToReassign.hotel.zone : serviceToReassign.hotelZone}</strong>. 
+                    Cualquier repartidor de esta zona puede tomarlo.
+                  </p>
+                </div>
+                
                 <p className="text-sm text-gray-600 mb-2">
                   <strong>Hotel:</strong> {typeof serviceToReassign.hotel === 'object' ? serviceToReassign.hotel.name : serviceToReassign.hotel}
                 </p>
@@ -688,41 +706,56 @@ const Pickup = () => {
                   <strong>Bolsas:</strong> {serviceToReassign.bagCount}
                 </p>
                 
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Seleccionar Repartidor
-                </label>
-                <select
-                  id="reassign-repartidor"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                  defaultValue={serviceToReassign.repartidorId || ''}
-                >
-                  <option value="">Sin asignar</option>
-                  {repartidores.map((repartidor) => (
-                    <option key={repartidor.id} value={repartidor.id}>
-                      {repartidor.name} - Zona {repartidor.zone}
-                    </option>
-                  ))}
-                </select>
+                {serviceToReassign.repartidorId && (
+                  <>
+                    <p className="text-sm text-gray-700 font-medium mb-2">
+                      Este servicio ya tiene un repartidor asignado específicamente. 
+                      Puede desasignarlo o cambiarlo a otro repartidor.
+                    </p>
+                    
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Seleccionar Repartidor
+                    </label>
+                    <select
+                      id="reassign-repartidor"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                      defaultValue={serviceToReassign.repartidorId || ''}
+                    >
+                      <option value="">Desasignar repartidor específico</option>
+                      {repartidores
+                        .filter(r => r.zone === (typeof serviceToReassign.hotel === 'object' ? serviceToReassign.hotel.zone : serviceToReassign.hotelZone))
+                        .map((repartidor) => (
+                          <option key={repartidor.id} value={repartidor.id}>
+                            {repartidor.name} - Zona {repartidor.zone}
+                          </option>
+                        ))
+                      }
+                    </select>
+                  </>
+                )}
               </div>
               
               <div className="flex space-x-4">
+                {serviceToReassign.repartidorId && (
+                  <Button
+                    onClick={() => {
+                      const select = document.getElementById('reassign-repartidor');
+                      handleReassignSubmit(select.value);
+                    }}
+                    className="flex-1"
+                  >
+                    Actualizar Asignación
+                  </Button>
+                )}
                 <Button
-                  onClick={() => {
-                    const select = document.getElementById('reassign-repartidor');
-                    handleReassignSubmit(select.value);
-                  }}
-                  className="flex-1"
-                >
-                  {serviceToReassign.repartidorId ? 'Reasignar' : 'Asignar'}
-                </Button>
-                <Button
-                  variant="outline"
+                  variant={serviceToReassign.repartidorId ? "outline" : "primary"}
                   onClick={() => {
                     setShowReassignForm(false);
                     setServiceToReassign(null);
                   }}
+                  className={!serviceToReassign.repartidorId ? "flex-1" : ""}
                 >
-                  Cancelar
+                  {!serviceToReassign.repartidorId ? "Entendido" : "Cancelar"}
                 </Button>
               </div>
             </div>
