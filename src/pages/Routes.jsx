@@ -82,6 +82,214 @@ const Routes = () => {
     setActiveRoute(active);
   };
 
+  // Función para generar servicios adicionales
+  const generateAdditionalPendingPickups = (hotels, repartidores) => {
+    if (!hotels || !hotels.length || !repartidores || !repartidores.length) {
+      return [];
+    }
+    
+    const newServices = [];
+    const today = new Date();
+    
+    // Crear 2-3 servicios por cada hotel
+    hotels.forEach(hotel => {
+      // Encontrar repartidores para esta zona
+      const zoneRepartidores = repartidores.filter(rep => rep.zone === hotel.zone);
+      
+      // Si no hay repartidores para esta zona, usar el primer repartidor
+      const availableRepartidores = zoneRepartidores.length > 0 ? zoneRepartidores : [repartidores[0]];
+      
+      // Crear 2-3 servicios para este hotel
+      const numServices = Math.floor(Math.random() * 2) + 2; // 2-3 servicios
+      
+      for (let i = 1; i <= numServices; i++) {
+        const randomRepartidor = availableRepartidores[Math.floor(Math.random() * availableRepartidores.length)];
+        
+        newServices.push({
+          id: Date.now() + Math.floor(Math.random() * 1000) + i,
+          hotelId: hotel.id,
+          hotel: hotel.name,
+          hotelZone: hotel.zone,
+          guestName: `Cliente ${hotel.name} ${i}`,
+          roomNumber: `${100 + i}`,
+          status: SERVICE_STATUS.PENDING_PICKUP,
+          bagCount: Math.floor(Math.random() * 3) + 1,
+          weight: null, // Se llenará durante el recojo
+          priority: Math.random() > 0.8 ? 'alta' : (Math.random() > 0.5 ? 'media' : 'normal'),
+          timestamp: new Date(today.getTime() - Math.random() * 86400000).toISOString(),
+          repartidorId: randomRepartidor.id,
+          price: null // Se calculará después
+        });
+      }
+    });
+    
+    return newServices;
+  };
+  
+  // Función para inicializar datos modernos
+  const initializeModernData = () => {
+    try {
+      // Limpiar datos existentes
+      localStorage.clear();
+      
+      // Crear usuarios
+      const users = [
+        {
+          id: "1",
+          name: "Admin",
+          email: "admin@fumylimp.com",
+          password: "admin123",
+          role: USER_ROLES.ADMIN,
+          active: true
+        },
+        {
+          id: "2",
+          name: "Juan Repartidor",
+          email: "juan@fumylimp.com",
+          password: "repartidor123",
+          role: USER_ROLES.REPARTIDOR,
+          zone: "NORTE",
+          active: true
+        },
+        {
+          id: "3",
+          name: "María Repartidor",
+          email: "maria@fumylimp.com",
+          password: "repartidor123",
+          role: USER_ROLES.REPARTIDOR,
+          zone: "SUR",
+          active: true
+        },
+        {
+          id: "4",
+          name: "Carlos Repartidor",
+          email: "carlos@fumylimp.com",
+          password: "repartidor123",
+          role: USER_ROLES.REPARTIDOR,
+          zone: "ESTE",
+          active: true
+        }
+      ];
+      
+      // Guardar usuarios
+      localStorage.setItem(APP_CONFIG.STORAGE_KEYS.USERS, JSON.stringify(users));
+      
+      // Crear hoteles
+      const hotels = [
+        {
+          id: "1",
+          name: "Hotel Miraflores",
+          address: "Av. Larco 345, Miraflores",
+          zone: "SUR",
+          contactPerson: "Jorge Mendoza",
+          phone: "+51 987654321",
+          email: "reservas@hotelmiraflores.com",
+          bagInventory: 25,
+          pricePerKg: 8.5
+        },
+        {
+          id: "2",
+          name: "Hotel San Isidro",
+          address: "Calle Las Flores 123, San Isidro",
+          zone: "SUR",
+          contactPerson: "Ana Rodríguez",
+          phone: "+51 987654322",
+          email: "reservas@hotelsanisidro.com",
+          bagInventory: 30,
+          pricePerKg: 9.0
+        },
+        {
+          id: "3",
+          name: "Hotel Los Olivos",
+          address: "Av. Universitaria 789, Los Olivos",
+          zone: "NORTE",
+          contactPerson: "Pedro Suárez",
+          phone: "+51 987654323",
+          email: "reservas@hotellosolivos.com",
+          bagInventory: 20,
+          pricePerKg: 7.5
+        },
+        {
+          id: "4",
+          name: "Hotel San Miguel",
+          address: "Av. La Marina 456, San Miguel",
+          zone: "OESTE",
+          contactPerson: "Lucía Torres",
+          phone: "+51 987654324",
+          email: "reservas@hotelsanmiguel.com",
+          bagInventory: 15,
+          pricePerKg: 8.0
+        }
+      ];
+      
+      // Guardar hoteles
+      localStorage.setItem(APP_CONFIG.STORAGE_KEYS.HOTELS, JSON.stringify(hotels));
+      
+      // Crear servicios
+      const services = [];
+      const today = new Date();
+      
+      // Función para crear un servicio
+      const createService = (hotelId, guestName, roomNumber, status, repartidorId = null) => {
+        const id = Date.now() + Math.floor(Math.random() * 1000);
+        return {
+          id: id.toString(),
+          hotelId: hotelId,
+          hotel: hotels.find(h => h.id === hotelId).name,
+          hotelZone: hotels.find(h => h.id === hotelId).zone,
+          guestName: guestName,
+          roomNumber: roomNumber,
+          status: status,
+          bagCount: Math.floor(Math.random() * 3) + 1,
+          weight: ((Math.random() * 5) + 1).toFixed(1),
+          priority: Math.random() > 0.8 ? 'alta' : (Math.random() > 0.5 ? 'media' : 'normal'),
+          timestamp: new Date(today.getTime() - Math.random() * 86400000 * 3).toISOString(),
+          repartidorId: repartidorId,
+          price: Math.floor(Math.random() * 100) + 50
+        };
+      };
+      
+      // Crear servicios pendientes para cada zona
+      // Norte (Los Olivos)
+      for (let i = 1; i <= 5; i++) {
+        services.push(createService("3", `Cliente Norte ${i}`, `${100 + i}`, SERVICE_STATUS.PENDING_PICKUP, "2"));
+      }
+      
+      // Sur (Miraflores y San Isidro)
+      for (let i = 1; i <= 3; i++) {
+        services.push(createService("1", `Cliente Sur ${i}`, `${200 + i}`, SERVICE_STATUS.PENDING_PICKUP, "3"));
+      }
+      for (let i = 1; i <= 2; i++) {
+        services.push(createService("2", `Cliente Sur B ${i}`, `${300 + i}`, SERVICE_STATUS.PENDING_PICKUP, "3"));
+      }
+      
+      // Oeste (San Miguel)
+      for (let i = 1; i <= 4; i++) {
+        services.push(createService("4", `Cliente Oeste ${i}`, `${400 + i}`, SERVICE_STATUS.PENDING_PICKUP, "4"));
+      }
+      
+      // Guardar servicios
+      localStorage.setItem(APP_CONFIG.STORAGE_KEYS.SERVICES, JSON.stringify(services));
+      
+      // Crear etiquetas de bolsa
+      const bagLabels = [];
+      
+      // Contar servicios creados y etiquetas
+      return {
+        services: services.length,
+        bagLabels: bagLabels.length,
+        transactions: 0
+      };
+    } catch (error) {
+      console.error("Error al inicializar datos modernos:", error);
+      return {
+        services: 0,
+        bagLabels: 0,
+        transactions: 0
+      };
+    }
+  };
+  
   const generateOptimizedRoute = async () => {
     setLoading(true);
     
