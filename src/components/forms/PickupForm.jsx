@@ -546,7 +546,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                 <p className="text-blue-700 font-medium">Teléfono Hotel:</p>
                 <p className="text-blue-900 font-medium">
                   {typeof hotel === 'object' ? 
-                    (hotel.phone || hotel.contactPhone || "No disponible") : 
+                    (hotel.phone || "No disponible") : 
                     "No disponible"}
                 </p>
                 {typeof hotel === 'object' && hotel.contactPerson && (

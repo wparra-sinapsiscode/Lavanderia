@@ -419,7 +419,6 @@ export const loadMockHotels = () => {
       "zone": "ESTE",
       "bagInventory": 100,
       "phone": "555-123-4567",
-      "contactPhone": "555-123-4567",
       "contactPerson": "Juan Pérez"
     },
     {
@@ -429,7 +428,6 @@ export const loadMockHotels = () => {
       "zone": "CENTRO",
       "bagInventory": 200,
       "phone": "555-987-6543",
-      "contactPhone": "555-987-6543",
       "contactPerson": "María González"
     },
     {
@@ -439,7 +437,6 @@ export const loadMockHotels = () => {
       "zone": "NORTE",
       "bagInventory": 339,
       "phone": "555-456-7890",
-      "contactPhone": "555-456-7890",
       "contactPerson": "Roberto Sánchez"
     }
   ];

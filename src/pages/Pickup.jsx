@@ -46,13 +46,31 @@ const Pickup = () => {
     }
   }, [user]);
 
-  // Auto-refresh pickup data every 30 seconds to sync with route updates
+  // Auto-refresh pickup data periodically to sync with route updates
   useEffect(() => {
+    // En modo producción actualizaríamos cada 30 segundos
+    // Pero para evitar demasiados errores en la consola durante desarrollo,
+    // usamos un intervalo más largo (2 minutos)
     const interval = setInterval(() => {
-      loadPickupData();
-    }, 30000);
+      // Solo refrescar si el componente está visible
+      if (document.visibilityState === 'visible') {
+        loadPickupData();
+      }
+    }, 120000); // 2 minutos
 
-    return () => clearInterval(interval);
+    // También actualizar cuando la pestaña vuelva a estar visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadPickupData();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Handle navigation from Routes page
@@ -659,7 +677,7 @@ const Pickup = () => {
                 <p className="text-sm text-gray-600 mb-2">
                   <strong>Teléfono Hotel:</strong> {
                     typeof serviceToReassign.hotel === 'object' ? 
-                      (serviceToReassign.hotel.phone || serviceToReassign.hotel.contactPhone || "No disponible") : 
+                      (serviceToReassign.hotel.phone || "No disponible") : 
                       "No disponible"
                   }
                 </p>

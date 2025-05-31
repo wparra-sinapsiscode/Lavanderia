@@ -297,31 +297,53 @@ class ServiceService {
    */
   async getMyServices(filters = {}) {
     try {
+      // Controlar errores del backend marcando con una variable
+      // Este valor lo usamos para evitar reintentos innecesarios
+      // durante un período de tiempo
+      if (this._backendError && Date.now() - this._lastErrorTime < 60000) {
+        // Si tuvimos un error hace menos de 1 minuto, vamos directo al fallback local
+        console.log('Omitiendo petición al backend por error reciente');
+        throw new Error('Omitiendo backend (error reciente)');
+      }
+      
       // Para evitar el error 500, no enviamos el parámetro de zona al backend
       // ya que el backend ya filtra por el usuario autenticado
       const paramsToSend = { ...filters };
       delete paramsToSend.zone; // Eliminar zone para evitar errores
       
-      // Usar GET en ruta específica en lugar de /my-services para evitar confusión
-      // El backend confunde my-services con un ID de servicio
-      const response = await api.get('/services/repartidor', { params: paramsToSend });
-      
-      // Si llegamos aquí, la API respondió correctamente
-      return response.data;
-    } catch (error) {
-      console.error('Get my services error:', error);
-      
-      // Si el error es 404 (Not Found), intentar con la URL original
-      if (error.response && error.response.status === 404) {
-        try {
-          // Intentar con la URL original como fallback
-          const response = await api.get('/services/my-services', { params: { ...filters } });
-          return response.data;
-        } catch (secondError) {
-          console.error('Second attempt failed:', secondError);
-          // Continuar con el fallback local
+      try {
+        // Primer intento con la ruta recomendada
+        const response = await api.get('/services/repartidor', { params: paramsToSend });
+        
+        // Si llega aquí, todo bien
+        this._backendError = false;
+        return response.data;
+      } catch (firstError) {
+        // Si el error es 404, intentar con la ruta alternativa
+        if (firstError.response && firstError.response.status === 404) {
+          try {
+            // Segundo intento con la ruta original
+            const response = await api.get('/services/my-services', { params: paramsToSend });
+            
+            // Si llega aquí, todo bien con la ruta alternativa
+            this._backendError = false;
+            return response.data;
+          } catch (secondError) {
+            // Ambos intentos fallaron, registramos el error
+            this._backendError = true;
+            this._lastErrorTime = Date.now();
+            console.error('Both API attempts failed:', secondError);
+            throw secondError;
+          }
+        } else {
+          // No fue 404, registrar error y continuar al fallback
+          this._backendError = true;
+          this._lastErrorTime = Date.now();
+          throw firstError;
         }
       }
+    } catch (error) {
+      console.error('Get my services error:', error);
       
       // Usar almacenamiento local como fallback
       const { userStorage, serviceStorage } = await import('../utils/storage');

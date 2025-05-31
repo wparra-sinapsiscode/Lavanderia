@@ -1,43 +1,67 @@
 import { APP_CONFIG } from '../constants';
 
-// Generic sessionStorage utilities
+// Utilities for persistent storage
+// Usa localStorage para datos que deben persistir entre sesiones
+// y sessionStorage para datos temporales de la sesión actual
 export const storage = {
   get: (key) => {
     try {
-      const item = sessionStorage.getItem(key);
+      // Primero intentar obtener del localStorage (persistente)
+      let item = localStorage.getItem(key);
+      
+      // Si no existe en localStorage, intentar sessionStorage
+      if (!item) {
+        item = sessionStorage.getItem(key);
+      }
+      
       return item ? JSON.parse(item) : null;
     } catch (error) {
-      console.error(`Error getting ${key} from sessionStorage:`, error);
+      console.error(`Error getting ${key} from storage:`, error);
       return null;
     }
   },
 
   set: (key, value) => {
     try {
+      // Guardar en ambos almacenamientos para máxima compatibilidad
+      localStorage.setItem(key, JSON.stringify(value));
       sessionStorage.setItem(key, JSON.stringify(value));
       return true;
     } catch (error) {
-      console.error(`Error setting ${key} in sessionStorage:`, error);
-      return false;
+      console.error(`Error setting ${key} in storage:`, error);
+      
+      // Intentar solo en sessionStorage si localStorage falla (ej. por cuota)
+      try {
+        sessionStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch (fallbackError) {
+        console.error(`Error en fallback a sessionStorage:`, fallbackError);
+        return false;
+      }
     }
   },
 
   remove: (key) => {
     try {
+      // Eliminar de ambos almacenamientos
+      localStorage.removeItem(key);
       sessionStorage.removeItem(key);
       return true;
     } catch (error) {
-      console.error(`Error removing ${key} from sessionStorage:`, error);
+      console.error(`Error removing ${key} from storage:`, error);
       return false;
     }
   },
 
   clear: () => {
     try {
+      // Limpiar ambos almacenamientos
+      localStorage.clear();
       sessionStorage.clear();
+      console.log('🧹 Todos los datos locales han sido eliminados');
       return true;
     } catch (error) {
-      console.error('Error clearing sessionStorage:', error);
+      console.error('Error clearing storage:', error);
       return false;
     }
   }
