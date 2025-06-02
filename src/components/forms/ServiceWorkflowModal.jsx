@@ -339,7 +339,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                   <strong>Cliente:</strong> {service.guestName} - Hab. {service.roomNumber}
                 </p>
                 <p className="text-sm text-gray-600">
-                  <strong>Hotel:</strong> {service.hotel}
+                  <strong>Hotel:</strong> {typeof service.hotel === 'object' ? service.hotel.name : service.hotel}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Registrado:</strong> {formatDate(service.timestamp)}
