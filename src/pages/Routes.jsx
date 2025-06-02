@@ -155,11 +155,17 @@ const Routes = () => {
       // Refresh routes from API
       await loadRoutesData();
       
-      // Count metrics for success message
-      const totalPickupsGenerated = generatedRoutes.reduce((sum, route) => sum + (route.totalPickups || 0), 0);
-      const totalDeliveriesGenerated = generatedRoutes.reduce((sum, route) => sum + (route.totalDeliveries || 0), 0);
-      
-      success('Rutas Mixtas Generadas', `${generatedRoutes.length} rutas optimizadas: ${totalPickupsGenerated} recojos + ${totalDeliveriesGenerated} entregas`);
+      // Verificar que generatedRoutes es un array antes de usar reduce
+      if (Array.isArray(generatedRoutes)) {
+        // Count metrics for success message
+        const totalPickupsGenerated = generatedRoutes.reduce((sum, route) => sum + (route.totalPickups || 0), 0);
+        const totalDeliveriesGenerated = generatedRoutes.reduce((sum, route) => sum + (route.totalDeliveries || 0), 0);
+        
+        success('Rutas Mixtas Generadas', `${generatedRoutes.length} rutas optimizadas: ${totalPickupsGenerated} recojos + ${totalDeliveriesGenerated} entregas`);
+      } else {
+        // Si generatedRoutes no es un array, mostrar un mensaje genérico
+        success('Operación Completada', 'Se ha procesado la solicitud de generación de rutas');
+      }
       
     } catch (err) {
       console.error('Error generating route:', err);
