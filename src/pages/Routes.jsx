@@ -209,22 +209,12 @@ const Routes = () => {
         
         // If there are invalid services, regenerate
         if (invalidServices.length > 0) {
-          console.warn(`Found ${invalidServices.length} services with invalid hotel IDs. Regenerating...`);
-          // Clear and regenerate
+          console.warn(`Found ${invalidServices.length} services with invalid hotel IDs. Limpiando datos inválidos...`);
+          // Limpiamos los servicios inválidos
           serviceStorage.setServices([]);
-          
-          const allRepartidores = isAdmin ? 
-            JSON.parse(localStorage.getItem(APP_CONFIG.STORAGE_KEYS.USERS) || '[]').filter(u => u.role === USER_ROLES.REPARTIDOR) :
-            [user];
-          
-          const newPendingPickups = generateAdditionalPendingPickups(hotels, allRepartidores);
-          
-          if (newPendingPickups.length > 0) {
-            serviceStorage.setServices(newPendingPickups);
-            loadRoutesData();
-            success('Datos Corregidos', `Se corrigieron servicios con hoteles inválidos y se regeneraron ${newPendingPickups.length} nuevos`);
-            return;
-          }
+          error('Servicios Inválidos', 'Se detectaron servicios con hoteles inválidos. Los datos han sido limpiados.');
+          loadRoutesData();
+          return;
         }
 
         if (servicesForRoutes.length === 0) {
@@ -782,8 +772,6 @@ const Routes = () => {
               </span>
             </Button>
           )}
-          
-          {/* Reset demo button removed */}
         </div>
       </div>
 

@@ -14,9 +14,24 @@ const routeService = {
     try {
       const params = { date, ...options };
       const response = await api.post('/routes/generate', params);
+      
+      // Verificar si los datos vienen de mock y rechazarlos
+      if (response.data.fromMock === true) {
+        console.warn('Rechazando datos simulados de la API (fromMock=true)');
+        return [];
+      }
+      
       // Asegurar que siempre devolvemos un array, incluso si la respuesta es un objeto único
       const data = response.data.data || [];
-      return Array.isArray(data) ? data : [data]; 
+      
+      // Filtrar cualquier ruta que tenga IDs de repartidor simulados
+      const filteredData = Array.isArray(data) 
+        ? data.filter(route => !route.repartidorId?.includes('mock'))
+        : Array.isArray([data]) 
+          ? [data].filter(route => !route.repartidorId?.includes('mock'))
+          : [];
+          
+      return filteredData;
     } catch (error) {
       console.error('Error generating optimized route:', error);
       // En caso de error, devolver array vacío para evitar errores en el frontend
@@ -32,9 +47,22 @@ const routeService = {
   getAllRoutes: async (filters = {}) => {
     try {
       const response = await api.get('/routes', { params: filters });
+      
+      // Verificar si los datos vienen de mock y rechazarlos
+      if (response.data.fromMock === true) {
+        console.warn('Rechazando datos simulados de la API (fromMock=true)');
+        return [];
+      }
+      
       // Asegurar que siempre devolvemos un array
       const data = response.data.data || [];
-      return Array.isArray(data) ? data : [];
+      
+      // Filtrar cualquier ruta que tenga IDs de repartidor simulados
+      const filteredData = Array.isArray(data) 
+        ? data.filter(route => !route.repartidorId?.includes('mock'))
+        : [];
+        
+      return filteredData;
     } catch (error) {
       console.error('Error fetching routes:', error);
       // En caso de error, devolver array vacío para evitar errores en el frontend
