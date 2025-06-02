@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
 import { serviceStorage, hotelStorage, auditStorage } from '../../utils/storage';
 import { calculateServicePrice, convertToBase64 } from '../../utils';
 import serviceService from '../../services/service.service';
 import hotelService from '../../services/hotel.service';
+import routeService from '../../services/route.service';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
@@ -18,11 +19,17 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
   const { user } = useAuth();
   const { showNotification } = useNotifications();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Get route information from location state if available
+  const routeId = location.state?.routeId;
+  const hotelIndex = location.state?.hotelIndex;
+  const useApi = location.state?.useApi;
   const [service, setService] = useState(null);
   const [hotel, setHotel] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [signature, setSignature] = useState('');
-  const [location, setLocation] = useState(null);
+  const [geoLocation, setGeoLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showRedirectToLabels, setShowRedirectToLabels] = useState(false);
 
@@ -184,7 +191,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           const geocodeService = (await import('../../services/geocode.service')).default;
           const addressData = await geocodeService.reverseGeocode(latitude, longitude);
           
-          setLocation({
+          setGeoLocation({
             lat: latitude,
             lng: longitude,
             name: addressData.display_name || 'Ubicación actual'
@@ -198,7 +205,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           console.error('Error al obtener nombre de ubicación:', error);
           
           // Usar coordenadas sin nombre específico
-          setLocation({
+          setGeoLocation({
             lat: latitude,
             lng: longitude,
             name: `Ubicación (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
@@ -307,7 +314,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         return;
       }
       
-      if (!location) {
+      if (!geoLocation) {
         showNotification({
           type: 'error',
           message: 'Debe registrar la ubicación de recojo'
@@ -353,10 +360,10 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         bagCount: finalBagCount,
         observations: data.observations,
         collectorName: data.collectorName,
-        geolocation: location ? {
-          latitude: location.lat,
-          longitude: location.lng,
-          locationName: location.name
+        geolocation: geoLocation ? {
+          latitude: geoLocation.lat,
+          longitude: geoLocation.lng,
+          locationName: geoLocation.name
         } : null
       };
 
@@ -367,32 +374,64 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
 
       try {
         console.log('Intentando guardar recojo en la API...');
-        // First register pickup with API
-        const pickupResponse = await serviceService.registerPickup(serviceId, pickupData);
         
-        if (pickupResponse.success && pickupResponse.data) {
-          updatedService = pickupResponse.data;
+        // Check if we need to update a route
+        if (useApi && routeId && hotelIndex !== undefined) {
+          console.log(`Actualizando servicio en ruta ${routeId}, hotel ${hotelIndex}...`);
           
-          // Then upload photos
-          if (photos.length > 0) {
-            console.log(`Subiendo ${photos.length} fotos a la API...`);
-            await serviceService.uploadServicePhotos(serviceId, photos.map(p => p.file), 'pickup');
-          }
-          
-          // Then upload signature
-          if (signature) {
-            console.log('Subiendo firma a la API...');
-            // Convert signature from base64 to blob
-            const signatureBlob = await (async () => {
+          // Update service in route
+          const routeUpdateData = {
+            ...pickupData,
+            serviceId,
+            photos: photos.map(p => p.file),
+            signature: await (async () => {
               const res = await fetch(signature);
               return res.blob();
-            })();
-            
-            await serviceService.uploadSignature(serviceId, signatureBlob, 'pickup');
-          }
+            })(),
+            serviceStatus: 'PICKED_UP',
+            price
+          };
           
-          updateSuccess = true;
-          console.log('Recojo guardado exitosamente en la API');
+          const routeUpdateResponse = await serviceService.updateServiceInRoute(
+            serviceId, routeId, hotelIndex, routeUpdateData
+          );
+          
+          if (routeUpdateResponse.success) {
+            updatedService = routeUpdateResponse.data.service;
+            updateSuccess = true;
+            console.log('Servicio actualizado en ruta exitosamente');
+          } else {
+            throw new Error('Error al actualizar servicio en ruta: ' + routeUpdateResponse.message);
+          }
+        } else {
+          // Regular pickup without route
+          // First register pickup with API
+          const pickupResponse = await serviceService.registerPickup(serviceId, pickupData);
+          
+          if (pickupResponse.success && pickupResponse.data) {
+            updatedService = pickupResponse.data;
+            
+            // Then upload photos
+            if (photos.length > 0) {
+              console.log(`Subiendo ${photos.length} fotos a la API...`);
+              await serviceService.uploadServicePhotos(serviceId, photos.map(p => p.file), 'pickup');
+            }
+            
+            // Then upload signature
+            if (signature) {
+              console.log('Subiendo firma a la API...');
+              // Convert signature from base64 to blob
+              const signatureBlob = await (async () => {
+                const res = await fetch(signature);
+                return res.blob();
+              })();
+              
+              await serviceService.uploadSignature(serviceId, signatureBlob, 'pickup');
+            }
+            
+            updateSuccess = true;
+            console.log('Recojo guardado exitosamente en la API');
+          }
         }
       } catch (apiError) {
         console.error('Error al guardar en API, usando almacenamiento local:', apiError);
@@ -413,7 +452,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           status: 'PICKED_UP',
           photos,
           signature,
-          geolocation: location,
+          geolocation: geoLocation,
           repartidor: user.name,
           repartidorId: user.id,
           price,
@@ -752,7 +791,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                   label="O seleccione manualmente"
                   onChange={({ direccion, coordenadas }) => {
                     if (coordenadas && coordenadas.lat && coordenadas.lng) {
-                      setLocation({
+                      setGeoLocation({
                         lat: coordenadas.lat,
                         lng: coordenadas.lng,
                         name: direccion || 'Ubicación seleccionada'
@@ -765,7 +804,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
             </div>
             
             {/* Location Display */}
-            {location && (
+            {geoLocation && (
               <div className="bg-green-50 p-4 rounded-lg">
                 <div className="flex items-center">
                   <MapPin className="h-5 w-5 text-green-600 mr-2" />
@@ -774,17 +813,17 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                       Ubicación Registrada
                     </p>
                     <p className="text-sm text-green-700">
-                      {location.name}
+                      {geoLocation.name}
                     </p>
                     <p className="text-xs text-green-600">
-                      Coordenadas: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                      Coordenadas: {geoLocation.lat.toFixed(6)}, {geoLocation.lng.toFixed(6)}
                     </p>
                   </div>
                 </div>
               </div>
             )}
             
-            {!location && (
+            {!geoLocation && (
               <div className="bg-amber-50 p-4 rounded-lg">
                 <div className="flex items-center">
                   <MapPin className="h-5 w-5 text-amber-600 mr-2" />

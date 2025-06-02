@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../store/AuthContext';
 import { serviceStorage } from '../../utils/storage';
 import dashboardService from '../../services/dashboard.service';
+import routeService from '../../services/route.service';
 import { useNotifications } from '../../store/NotificationContext';
 import { formatCurrency, formatDate, getStatusColor, getStatusText, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../../utils';
 import { SERVICE_STATUS } from '../../types';
@@ -18,10 +19,13 @@ const RepartidorDashboard = () => {
     pendingDeliveries: 0,
     completedToday: 0,
     totalEarnings: 0,
-    thisWeekServices: 0
+    thisWeekServices: 0,
+    activeRoutes: 0,
+    completedRoutes: 0
   });
   const [myServices, setMyServices] = useState([]);
   const [urgentPickups, setUrgentPickups] = useState([]);
+  const [todayRoutes, setTodayRoutes] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [timePeriod, setTimePeriod] = useState('week');
@@ -36,7 +40,15 @@ const RepartidorDashboard = () => {
     setLoading(true);
     try {
       // Try to fetch data from backend API
-      const repartidorMetrics = await dashboardService.getRepartidorStats(timePeriod, user.id);
+      const [repartidorMetrics, todayRoutesData] = await Promise.all([
+        dashboardService.getRepartidorStats(timePeriod, user.id),
+        routeService.getAllRoutes({ date: new Date().toISOString().split('T')[0], repartidorId: user.id })
+      ]);
+      
+      // Process routes data
+      const activeRoutes = todayRoutesData.filter(r => r.status === 'en_progreso').length;
+      const completedRoutes = todayRoutesData.filter(r => r.status === 'completada').length;
+      setTodayRoutes(todayRoutesData);
       
       // Update stats from backend data
       setStats({
@@ -45,7 +57,9 @@ const RepartidorDashboard = () => {
         pendingDeliveries: repartidorMetrics.pendingDelivery || 0,
         completedToday: repartidorMetrics.deliveredToday || 0,
         totalEarnings: repartidorMetrics.totalEarnings || 0,
-        thisWeekServices: repartidorMetrics.performance?.weeklyCompleted || 0
+        thisWeekServices: repartidorMetrics.performance?.weeklyCompleted || 0,
+        activeRoutes,
+        completedRoutes
       });
       
       // Set recent services from API
@@ -431,7 +445,9 @@ const RepartidorDashboard = () => {
               <MapPin className="h-6 w-6" />
               <div className="text-left">
                 <p className="font-medium">Ver Rutas</p>
-                <p className="text-sm opacity-70">Rutas mixtas</p>
+                <p className="text-sm opacity-70">
+                  {stats.activeRoutes > 0 ? `${stats.activeRoutes} activas` : 'Rutas mixtas'}
+                </p>
               </div>
             </Button>
             

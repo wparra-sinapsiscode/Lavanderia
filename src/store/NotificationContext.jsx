@@ -27,7 +27,8 @@ export const NotificationProvider = ({ children }) => {
       return null; // No añadir notificaciones duplicadas en corto período
     }
 
-    const id = Date.now().toString();
+    // Usar una combinación de timestamp y número aleatorio para crear IDs realmente únicos
+    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newNotification = {
       id,
       type: 'info', // info, success, warning, error

@@ -290,6 +290,32 @@ class ServiceService {
   }
   
   /**
+   * Update service status during a route
+   * @param {number} id - Service ID
+   * @param {string} routeId - Route ID
+   * @param {number} hotelIndex - Hotel index in the route
+   * @param {Object} updateData - Status update data
+   * @returns {Promise<Object>} Updated service and route
+   */
+  async updateServiceInRoute(id, routeId, hotelIndex, updateData) {
+    try {
+      const response = await api.put(`/services/${id}/route-update`, {
+        routeId,
+        hotelIndex,
+        ...updateData
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Update service in route error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al actualizar servicio en ruta',
+        error
+      };
+    }
+  }
+  
+  /**
    * Get services assigned to current user
    * @param {Object} filters - Optional filter parameters
    * @param {string} filters.status - Filter by status

@@ -1,8 +1,62 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { MapPin, Navigation, Clock, AlertTriangle } from 'lucide-react';
+import routeService from '../../services/route.service';
 import Card from './Card';
 
-const RouteMap = ({ route, hotels }) => {
+const RouteMap = ({ route: initialRoute, routeId, hotels }) => {
+  const [route, setRoute] = useState(initialRoute);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  useEffect(() => {
+    // If route is already provided, use it
+    if (initialRoute && initialRoute.hotels) {
+      setRoute(initialRoute);
+      return;
+    }
+    
+    // If routeId is provided but no route, fetch it
+    if (routeId && !initialRoute) {
+      fetchRouteById(routeId);
+    }
+  }, [initialRoute, routeId]);
+  
+  const fetchRouteById = async (id) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const fetchedRoute = await routeService.getRouteById(id);
+      setRoute(fetchedRoute);
+    } catch (err) {
+      console.error('Error fetching route:', err);
+      setError('No se pudo cargar la ruta. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  if (loading) {
+    return (
+      <Card>
+        <Card.Content className="p-6 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-gray-600">Cargando ruta...</p>
+        </Card.Content>
+      </Card>
+    );
+  }
+  
+  if (error) {
+    return (
+      <Card>
+        <Card.Content className="p-6 text-center">
+          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+          <p className="text-red-600">{error}</p>
+        </Card.Content>
+      </Card>
+    );
+  }
+  
   if (!route || !route.hotels) return null;
 
   const getStatusColor = (completed) => {

@@ -9,7 +9,6 @@ import serviceService from '../services/service.service';
 import hotelService from '../services/hotel.service';
 import userService from '../services/user.service';
 import { serviceStorage, storage } from '../utils/storage';
-import { initMockData, loadMockServices } from '../utils/mockData';
 import PickupForm from '../components/forms/PickupForm';
 import GuestRegistrationForm from '../components/forms/GuestRegistrationForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
@@ -38,10 +37,6 @@ const Pickup = () => {
 
   useEffect(() => {
     if (user) {
-      // Inicializar datos de prueba para el modo offline
-      if (serviceStorage.getServices().length === 0) {
-        initMockData(); 
-      }
       loadPickupData();
     }
   }, [user]);
@@ -310,10 +305,7 @@ const Pickup = () => {
 
   // Función de actualización manual para mejor experiencia de usuario
   const handleManualRefresh = () => {
-    // Recargar los datos de prueba para garantizar que están disponibles
-    initMockData();
-    
-    // Luego cargar los datos
+    // Cargar los datos
     loadPickupData();
     
     showNotification({

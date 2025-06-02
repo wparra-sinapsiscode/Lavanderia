@@ -138,6 +138,21 @@ export const isDeliveryUrgent = (service) => {
 };
 
 export const getPickupStats = (services, repartidorId = null) => {
+  // Asegurar que services siempre sea un array
+  if (!services || !Array.isArray(services)) {
+    console.warn('getPickupStats recibió un valor no válido para services:', services);
+    return {
+      total: 0,
+      pending: 0,
+      deliveries: 0,
+      pickedUp: 0,
+      inProcess: 0,
+      readyForDelivery: 0,
+      completed: 0,
+      urgent: 0
+    };
+  }
+  
   const filteredServices = repartidorId 
     ? services.filter(s => s.repartidorId === repartidorId || s.deliveryRepartidorId === repartidorId)
     : services;
