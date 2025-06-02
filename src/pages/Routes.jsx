@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { serviceStorage, hotelStorage, storage } from '../utils/storage';
 import { formatDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
-// Mock data import removed
-import { APP_CONFIG } from '../constants';
 import routeService from '../services/route.service';
 import serviceService from '../services/service.service';
 import hotelService from '../services/hotel.service';
+import { hotelHasValidCoordinates, extractHotelCoordinates } from '../utils/coordinates';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { 
@@ -65,8 +63,11 @@ const Routes = () => {
         routeService.getAllRoutes({ date: selectedDate, repartidorId: isAdmin ? undefined : user?.id })
       ]);
       
-      setServices(Array.isArray(servicesResponse) ? servicesResponse : []);
-      setHotels(Array.isArray(hotelsResponse) ? hotelsResponse : []);
+      const validServices = Array.isArray(servicesResponse) ? servicesResponse : [];
+      const validHotels = Array.isArray(hotelsResponse) ? hotelsResponse : [];
+      
+      setServices(validServices);
+      setHotels(validHotels);
       
       // Process and set routes
       const routesWithNumbers = Array.isArray(routesResponse) ? routesResponse.map((route, index) => {
@@ -83,64 +84,35 @@ const Routes = () => {
       setActiveRoute(active);
     } catch (err) {
       console.error('Error loading routes data:', err);
-      error('Error', 'No se pudo cargar los datos de rutas: ' + err.message);
+      error('Error', 'No se pudo cargar los datos de rutas: ' + (err.message || 'Error desconocido'));
       
-      // Fallback to localStorage if API fails
-      const allServices = serviceStorage.getServices();
-      const allHotels = hotelStorage.getHotels();
-      const existingRoutes = storage.get('PICKUP_ROUTES') || [];
-      
-      setServices(allServices);
-      setHotels(allHotels);
-      
-      // Filter routes for selected date and user
-      const filteredRoutes = existingRoutes.filter(route => {
-        const routeDate = route.date;
-        const matchesDate = routeDate === selectedDate;
-        const matchesUser = isAdmin || route.repartidorId === user.id;
-        return matchesDate && matchesUser;
-      });
-
-      // Assign route numbers to existing routes that don't have them
-      const routesWithNumbers = filteredRoutes.map((route, index) => {
-        if (!route.routeNumber) {
-          return { ...route, routeNumber: index + 1 };
-        }
-        return route;
-      });
-      
-      setRoutes(routesWithNumbers);
-      
-      // Set active route if exists
-      const active = routesWithNumbers.find(r => r.status === 'en_progreso');
-      setActiveRoute(active);
+      // Reset states to empty arrays rather than using potentially stale data
+      setServices([]);
+      setHotels([]);
+      setRoutes([]);
+      setActiveRoute(null);
     } finally {
       setLoading(false);
     }
   };
 
-  
-  // Función para limpiar datos locales
-  const clearLocalData = () => {
-    try {
-      // Limpiar datos existentes
-      localStorage.clear();
-      
-      return {
-        services: 0,
-        bagLabels: 0,
-        transactions: 0
-      };
-    } catch (error) {
-      console.error("Error al limpiar datos locales:", error);
-      return {
-        services: 0,
-        bagLabels: 0,
-        transactions: 0
-      };
-    }
+  // Validate hotel coordinates using our utility function
+  const validateHotelCoordinates = (hotel) => {
+    return hotelHasValidCoordinates(hotel);
   };
   
+  // Get missing coordinates details for error messages
+  const getMissingCoordinatesDetails = (hotel) => {
+    if (!hotel) return 'Hotel no encontrado';
+    
+    const coordinates = extractHotelCoordinates(hotel);
+    if (!coordinates) {
+      return `${hotel.name || 'Hotel sin nombre'} no tiene coordenadas`;
+    }
+    
+    return null;
+  };
+
   const generateOptimizedRoute = async () => {
     setLoading(true);
     
@@ -150,6 +122,25 @@ const Routes = () => {
       
       if (existingRoutes.length > 0) {
         error('Rutas Existentes', `Ya existen ${existingRoutes.length} rutas para la fecha ${selectedDate}. Usa el botón "Limpiar Rutas del Día" si quieres regenerar.`);
+        return;
+      }
+      
+      // Validate that hotels have coordinates before generating routes
+      const hotelsWithoutCoordinates = hotels.filter(hotel => !validateHotelCoordinates(hotel));
+      
+      if (hotelsWithoutCoordinates.length > 0) {
+        // Get detailed missing coordinates information
+        const missingCoordinatesDetails = hotelsWithoutCoordinates
+          .map(hotel => getMissingCoordinatesDetails(hotel))
+          .filter(detail => detail !== null);
+        
+        // Format the error message with details
+        const errorMessage = [
+          `${hotelsWithoutCoordinates.length} hoteles no tienen coordenadas válidas:`,
+          ...missingCoordinatesDetails.map(detail => `- ${detail}`)
+        ].join('\n');
+        
+        error('Coordenadas Faltantes', errorMessage + '\n\nPor favor actualice la información de estos hoteles antes de generar rutas.');
         return;
       }
       
@@ -172,219 +163,7 @@ const Routes = () => {
       
     } catch (err) {
       console.error('Error generating route:', err);
-      error('Error', `No se pudo generar la ruta optimizada: ${err.message}`);
-      
-      // Fallback to localStorage method if API fails
-      try {
-        // Check if routes already exist for today
-        const existingRoutes = storage.get('PICKUP_ROUTES') || [];
-        const routesForToday = existingRoutes.filter(r => r.date === selectedDate);
-        
-        if (routesForToday.length > 0) {
-          error('Rutas Existentes', `Ya existen ${routesForToday.length} rutas para la fecha ${selectedDate}. Usa el botón "Limpiar Rutas del Día" si quieres regenerar.`);
-          return;
-        }
-        
-        // Get services for mixed routes - pickups and deliveries
-        const servicesForRoutes = services.filter(s => 
-          (s.status === SERVICE_STATUS.PENDING_PICKUP || 
-           s.status === SERVICE_STATUS.READY_FOR_DELIVERY ||
-           s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-           s.status === SERVICE_STATUS.COMPLETED) && 
-          (s.repartidorId || s.deliveryRepartidorId) // Services assigned to a repartidor for pickup or delivery
-        );
-
-        // Validate hotel IDs in services for routes
-        const invalidServices = servicesForRoutes.filter(service => {
-          return !hotels.find(h => h.id === service.hotelId);
-        });
-        
-        console.log('Debug route generation (fallback):', {
-          totalServices: services.length,
-          pendingServices: services.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length,
-          deliveryServices: services.filter(s => s.status === SERVICE_STATUS.READY_FOR_DELIVERY).length,
-          assignedServices: servicesForRoutes.length,
-          invalidServices: invalidServices.length
-        });
-        
-        // If there are invalid services, regenerate
-        if (invalidServices.length > 0) {
-          console.warn(`Found ${invalidServices.length} services with invalid hotel IDs. Limpiando datos inválidos...`);
-          // Limpiamos los servicios inválidos
-          serviceStorage.setServices([]);
-          error('Servicios Inválidos', 'Se detectaron servicios con hoteles inválidos. Los datos han sido limpiados.');
-          loadRoutesData();
-          return;
-        }
-
-        if (servicesForRoutes.length === 0) {
-          // Reset corrupted data and regenerate everything fresh
-          console.log('No valid services for routes found. Resetting and regenerating data...');
-          
-          // Clear existing services with hotel ID mismatches
-          serviceStorage.setServices([]);
-          
-          console.log('No valid services for routes found. Limpiando datos...');
-          
-          // Clear all data
-          localStorage.clear();
-          const result = clearLocalData();
-          
-          // Reload data after clearing
-          loadRoutesData();
-          error('Sin Servicios', 'No se encontraron servicios válidos. Se han limpiado los datos locales.');
-          return;
-        }
-
-        // Group by repartidor (what matters for route generation)
-        const repartidorGroups = {};
-        servicesForRoutes.forEach(service => {
-          // Use pickup repartidor for pickups, delivery repartidor for deliveries
-          const repartidorId = service.repartidorId || service.deliveryRepartidorId;
-          if (!repartidorGroups[repartidorId]) {
-            repartidorGroups[repartidorId] = [];
-          }
-          repartidorGroups[repartidorId].push(service);
-        });
-
-        if (Object.keys(repartidorGroups).length === 0) {
-          throw new Error('No repartidor groups found');
-        }
-
-        // Create routes per repartidor
-        const newRoutes = [];
-        const allStoredRoutes = storage.get('PICKUP_ROUTES') || [];
-        const existingRoutesForDate = allStoredRoutes.filter(r => r.date === selectedDate);
-        let routeCounter = existingRoutesForDate.length + 1;
-
-        // Get all users for repartidor name lookup
-        const allUsers = JSON.parse(localStorage.getItem(APP_CONFIG.STORAGE_KEYS.USERS) || '[]');
-
-        Object.entries(repartidorGroups).forEach(([repartidorId, repartidorServices]) => {
-          const repartidor = allUsers.find(u => u.id === repartidorId);
-          
-          // Group this repartidor's services by hotel for optimization
-          const hotelGroups = {};
-          repartidorServices.forEach(service => {
-            const hotelId = service.hotelId;
-            if (!hotelGroups[hotelId]) {
-              hotelGroups[hotelId] = {
-                pickups: [],
-                deliveries: []
-              };
-            }
-            
-            // Separate pickups and deliveries based on status
-            if (service.status === SERVICE_STATUS.PENDING_PICKUP) {
-              hotelGroups[hotelId].pickups.push(service);
-            } else if (service.status === SERVICE_STATUS.READY_FOR_DELIVERY ||
-                       service.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-                       service.status === SERVICE_STATUS.COMPLETED) {
-              hotelGroups[hotelId].deliveries.push(service);
-            }
-          });
-
-          // Sort hotels by priority (highest priority first)
-          const optimizedHotels = Object.entries(hotelGroups)
-            .map(([hotelId, services]) => {
-              const hotel = hotels.find(h => h.id === hotelId);
-              
-              // Skip if hotel not found
-              if (!hotel) {
-                console.warn(`Hotel with id ${hotelId} not found. Skipping services:`, services);
-                return null;
-              }
-              
-              const sortedPickups = sortServicesByPriority(services.pickups);
-              const sortedDeliveries = sortServicesByPriority(services.deliveries);
-              const allServices = [...services.pickups, ...services.deliveries];
-              const maxPriority = allServices.length > 0 ? Math.max(...allServices.map(p => 
-                p.priority === 'alta' ? 3 : p.priority === 'media' ? 2 : 1
-              )) : 1;
-              
-              return {
-                hotel,
-                pickups: sortedPickups,
-                deliveries: sortedDeliveries,
-                priority: maxPriority,
-                estimatedTime: 45 // minutes per hotel
-              };
-            })
-            .filter(item => item !== null) // Remove null entries
-            .sort((a, b) => b.priority - a.priority);
-
-          // Skip this repartidor if no valid hotels found
-          if (optimizedHotels.length === 0) {
-            console.warn(`No valid hotels found for repartidor ${repartidor?.name}. Skipping route creation.`);
-            return;
-          }
-
-          // Generate route ID
-          const routeId = `${selectedDate.replace(/-/g, '')}${routeCounter.toString().padStart(2, '0')}`;
-
-          // Create route for this repartidor
-          const totalServices = repartidorServices.length;
-          const totalPickups = repartidorServices.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length;
-          const totalDeliveries = repartidorServices.filter(s => 
-            s.status === SERVICE_STATUS.READY_FOR_DELIVERY ||
-            s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-            s.status === SERVICE_STATUS.COMPLETED
-          ).length;
-          
-          const newRoute = {
-            id: routeId,
-            routeNumber: routeCounter,
-            repartidorId: repartidorId,
-            repartidorName: repartidor?.name || 'Repartidor Desconocido',
-            date: selectedDate,
-            status: 'pendiente',
-            estimatedDuration: optimizedHotels.length * 45,
-            totalServices: totalServices,
-            totalPickups: totalPickups,
-            totalDeliveries: totalDeliveries,
-            hotels: optimizedHotels.map((item, index) => ({
-              hotelId: item.hotel.id,
-              hotelName: item.hotel.name,
-              hotelAddress: item.hotel.address,
-              pickups: item.pickups,
-              deliveries: item.deliveries,
-              services: [...item.pickups, ...item.deliveries], // Combined for compatibility
-              estimatedTime: `${9 + index}:00`, // Starting at 9 AM
-              priority: item.priority,
-              completed: false,
-              timeSpent: 0
-            })),
-            createdAt: new Date().toISOString(),
-            startTime: null,
-            endTime: null
-          };
-
-          newRoutes.push(newRoute);
-          routeCounter++;
-        });
-
-        if (newRoutes.length === 0) {
-          error('Sin Rutas', 'No se pudieron crear rutas. Verifica que existan hoteles válidos para los servicios pendientes.');
-          return;
-        }
-
-        // Save all new routes
-        const updatedRoutes = [...allStoredRoutes, ...newRoutes];
-        storage.set('PICKUP_ROUTES', updatedRoutes);
-        
-        setRoutes(prev => [...prev, ...newRoutes]);
-        console.log('Generated routes (fallback):', newRoutes);
-        const totalPickupsGenerated = servicesForRoutes.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length;
-        const totalDeliveriesGenerated = servicesForRoutes.filter(s => 
-          s.status === SERVICE_STATUS.READY_FOR_DELIVERY ||
-          s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-          s.status === SERVICE_STATUS.COMPLETED
-        ).length;
-        success('Rutas Mixtas Generadas (local)', `${newRoutes.length} rutas optimizadas: ${totalPickupsGenerated} recojos + ${totalDeliveriesGenerated} entregas`);
-      } catch (fallbackError) {
-        console.error('Fallback route generation failed:', fallbackError);
-        error('Error Crítico', `No se pudo generar la ruta: ${fallbackError.message}`);
-      }
+      error('Error', `No se pudo generar la ruta optimizada: ${err.message || 'Error desconocido'}`);
     } finally {
       setLoading(false);
     }
@@ -402,21 +181,9 @@ const Routes = () => {
       success('Rutas Eliminadas', `Se eliminaron todas las rutas del ${selectedDate}`);
     } catch (err) {
       console.error('Error clearing routes:', err);
-      error('Error', `No se pudieron eliminar las rutas: ${err.message}`);
+      error('Error', `No se pudieron eliminar las rutas: ${err.message || 'Error desconocido'}`);
       
-      // Fallback to localStorage if API fails
-      try {
-        const existingRoutes = storage.get('PICKUP_ROUTES') || [];
-        const routesNotToday = existingRoutes.filter(r => r.date !== selectedDate);
-        
-        storage.set('PICKUP_ROUTES', routesNotToday);
-        setRoutes([]);
-        
-        success('Rutas Eliminadas (local)', `Se eliminaron todas las rutas del ${selectedDate}`);
-      } catch (fallbackError) {
-        console.error('Fallback route clearing failed:', fallbackError);
-        error('Error Crítico', `No se pudieron eliminar las rutas: ${fallbackError.message}`);
-      }
+      // Don't attempt to use localStorage as fallback, just report the error
     } finally {
       setLoading(false);
     }
@@ -461,36 +228,9 @@ const Routes = () => {
       success('Ruta Iniciada', 'La ruta ha sido iniciada correctamente');
     } catch (err) {
       console.error('Error starting route:', err);
-      error('Error', `No se pudo iniciar la ruta: ${err.message}`);
+      error('Error', `No se pudo iniciar la ruta: ${err.message || 'Error desconocido'}`);
       
-      // Fallback to localStorage if API fails
-      try {
-        const updatedRoutes = routes.map(route => {
-          if (route.id === routeId) {
-            return {
-              ...route,
-              status: 'en_progreso',
-              startTime: new Date().toISOString()
-            };
-          }
-          return route;
-        });
-        
-        setRoutes(updatedRoutes);
-        setActiveRoute(updatedRoutes.find(r => r.id === routeId));
-        
-        // Update storage
-        const allRoutes = storage.get('PICKUP_ROUTES') || [];
-        const updated = allRoutes.map(r => 
-          r.id === routeId ? updatedRoutes.find(ur => ur.id === routeId) : r
-        );
-        storage.set('PICKUP_ROUTES', updated);
-        
-        success('Ruta Iniciada (local)', 'La ruta ha sido iniciada correctamente');
-      } catch (fallbackError) {
-        console.error('Fallback route start failed:', fallbackError);
-        error('Error Crítico', `No se pudo iniciar la ruta: ${fallbackError.message}`);
-      }
+      // No fallback, just report the error and don't change state
     } finally {
       setLoading(false);
     }
@@ -500,7 +240,10 @@ const Routes = () => {
     const route = routes.find(r => r.id === routeId);
     const hotel = route?.hotels[hotelIndex];
     
-    if (!hotel) return;
+    if (!hotel) {
+      error('Hotel no encontrado', 'No se pudo encontrar el hotel en la ruta especificada.');
+      return;
+    }
 
     // Find the specific service
     const service = hotel.services?.find(s => s.id === serviceId) || 
@@ -881,7 +624,7 @@ const Routes = () => {
               <div className="text-center">
                 <p className="text-3xl font-bold text-green-600">
                   {routes.filter(r => r.date === selectedDate && r.efficiency)
-                    .reduce((avg, r, _, arr) => avg + r.efficiency / arr.length, 0).toFixed(0)}%
+                    .reduce((avg, r, _, arr) => avg + r.efficiency / (arr.length || 1), 0).toFixed(0)}%
                 </p>
                 <p className="text-sm text-gray-600">Eficiencia Promedio</p>
               </div>
@@ -889,7 +632,7 @@ const Routes = () => {
               <div className="text-center">
                 <p className="text-3xl font-bold text-purple-600">
                   {routes.filter(r => r.date === selectedDate && r.totalDistance)
-                    .reduce((sum, r) => sum + parseFloat(r.totalDistance), 0).toFixed(1)} km
+                    .reduce((sum, r) => sum + (parseFloat(r.totalDistance) || 0), 0).toFixed(1)} km
                 </p>
                 <p className="text-sm text-gray-600">Distancia Total</p>
               </div>
