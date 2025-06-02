@@ -339,7 +339,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                   <strong>Cliente:</strong> {service.guestName} - Hab. {service.roomNumber}
                 </p>
                 <p className="text-sm text-gray-600">
-                  <strong>Hotel:</strong> {typeof service.hotel === 'object' ? service.hotel.name : service.hotel}
+                  <strong>Hotel:</strong> {typeof service.hotel === 'object' && service.hotel?.name 
+                    ? service.hotel.name 
+                    : (service.hotel || 'No especificado')}
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Registrado:</strong> {formatDate(service.timestamp)}
@@ -524,7 +526,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 </div>
                 <div>
                   <p className="text-gray-500">Repartidor</p>
-                  <p className="font-medium">{service.repartidor || 'Sin asignar'}</p>
+                  <p className="font-medium">
+                    {typeof service.repartidor === 'object' && service.repartidor?.name 
+                      ? service.repartidor.name 
+                      : (service.repartidor || 'Sin asignar')}
+                  </p>
                 </div>
                 <div>
                   <p className="text-gray-500">Prioridad</p>

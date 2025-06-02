@@ -267,8 +267,15 @@ const AdminDashboard = () => {
       const response = await dashboardService.getAuditLogs();
       
       // Verificar de manera segura la estructura de la respuesta
-      if (response && response.logs && Array.isArray(response.logs)) {
+      if (response && response.data && Array.isArray(response.data)) {
         // Filtrar posibles entradas nulas o inválidas y limitar a 10 items
+        const validLogs = response.data
+          .filter(log => log && typeof log === 'object')
+          .slice(0, 10);
+        
+        setRecentActivities(validLogs);
+      } else if (response && response.logs && Array.isArray(response.logs)) {
+        // Mantener compatibilidad con el formato anterior
         const validLogs = response.logs
           .filter(log => log && typeof log === 'object')
           .slice(0, 10);
