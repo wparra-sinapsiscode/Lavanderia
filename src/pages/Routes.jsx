@@ -65,16 +65,16 @@ const Routes = () => {
         routeService.getAllRoutes({ date: selectedDate, repartidorId: isAdmin ? undefined : user?.id })
       ]);
       
-      setServices(servicesResponse);
-      setHotels(hotelsResponse);
+      setServices(Array.isArray(servicesResponse) ? servicesResponse : []);
+      setHotels(Array.isArray(hotelsResponse) ? hotelsResponse : []);
       
       // Process and set routes
-      const routesWithNumbers = routesResponse.map((route, index) => {
+      const routesWithNumbers = Array.isArray(routesResponse) ? routesResponse.map((route, index) => {
         if (!route.routeNumber) {
           return { ...route, routeNumber: index + 1 };
         }
         return route;
-      });
+      }) : [];
       
       setRoutes(routesWithNumbers);
       
