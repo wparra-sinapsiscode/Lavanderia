@@ -4,7 +4,7 @@ import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
 import { formatDate, getStatusColor, getStatusText } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
-import { APP_CONFIG } from '../constants';
+import { APP_CONFIG, SERVICE_STATUS_CONFIG } from '../constants';
 import serviceService from '../services/service.service';
 import hotelService from '../services/hotel.service';
 import userService from '../services/user.service';
@@ -500,6 +500,7 @@ const Pickup = () => {
     loadPickupData();
   };
 
+
   const StatCard = ({ title, value, icon: Icon, color = 'blue' }) => (
     <Card>
       <Card.Content className="p-6">
@@ -659,11 +660,11 @@ const Pickup = () => {
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                             service.status === 'PENDING_PICKUP' && service.weight && service.photos && service.signature
                               ? 'bg-yellow-100 text-yellow-800' 
-                              : getStatusColor(service.status)
+                              : SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || getStatusColor(service.status)
                           }`}>
                             {service.status === 'PENDING_PICKUP' && service.weight && service.photos && service.signature
                               ? 'Listo para confirmar'
-                              : getStatusText(service.status)
+                              : SERVICE_STATUS_CONFIG[service.status]?.label || getStatusText(service.status)
                             }
                           </span>
                           {isAdmin && (
@@ -692,49 +693,53 @@ const Pickup = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE' ? (
-                          // Servicios en estado PENDING_PICKUP
-                          service.weight && service.photos && service.signature ? (
-                            // Tiene datos pero no confirmado
-                            isRepartidor ? (
-                              <Button
-                                size="sm"
-                                className="bg-yellow-600 hover:bg-yellow-700"
-                                onClick={() => handleConfirmPickup(service)}
-                              >
-                                <UserCheck className="h-4 w-4 mr-1" />
-                                Confirmar Recogida
-                              </Button>
+                        <div className="flex items-center space-x-2">
+                          {/* Botones de acción originales */}
+                          {service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE' ? (
+                            // Servicios en estado PENDING_PICKUP
+                            service.weight && service.photos && service.signature ? (
+                              // Tiene datos pero no confirmado
+                              isRepartidor ? (
+                                <Button
+                                  size="sm"
+                                  className="bg-yellow-600 hover:bg-yellow-700"
+                                  onClick={() => handleConfirmPickup(service)}
+                                >
+                                  <UserCheck className="h-4 w-4 mr-1" />
+                                  Confirmar Recogida
+                                </Button>
+                              ) : (
+                                <div className="flex items-center text-yellow-600">
+                                  <Clock className="h-4 w-4 mr-1" />
+                                  <span>Listo para confirmar</span>
+                                </div>
+                              )
                             ) : (
-                              <div className="flex items-center text-yellow-600">
-                                <Clock className="h-4 w-4 mr-1" />
-                                <span>Listo para confirmar</span>
-                              </div>
+                              // Sin datos de recogida
+                              isRepartidor ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => setSelectedService(service)}
+                                >
+                                  <Truck className="h-4 w-4 mr-1" />
+                                  Recoger
+                                </Button>
+                              ) : (
+                                <div className={`flex items-center ${SERVICE_STATUS_CONFIG[service.status]?.textColor || 'text-red-600'}`}>
+                                  <Clock className="h-4 w-4 mr-1" />
+                                  <span>{SERVICE_STATUS_CONFIG[service.status]?.action || 'Pendiente'}</span>
+                                </div>
+                              )
                             )
                           ) : (
-                            // Sin datos de recogida
-                            isRepartidor ? (
-                              <Button
-                                size="sm"
-                                onClick={() => setSelectedService(service)}
-                              >
-                                <Truck className="h-4 w-4 mr-1" />
-                                Recoger
-                              </Button>
-                            ) : (
-                              <div className="flex items-center text-red-600">
-                                <Clock className="h-4 w-4 mr-1" />
-                                <span>Pendiente</span>
-                              </div>
-                            )
-                          )
-                        ) : (
-                          // Servicios ya recogidos (PICKED_UP u otros estados)
-                          <div className="flex items-center text-green-600">
-                            <Package className="h-4 w-4 mr-1" />
-                            <span>Recogido</span>
-                          </div>
-                        )}
+                            // Servicios ya recogidos (PICKED_UP u otros estados)
+                            <div className="flex items-center text-green-600">
+                              <Package className="h-4 w-4 mr-1" />
+                              <span>Recogido</span>
+                            </div>
+                          )}
+
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -863,8 +868,12 @@ const Pickup = () => {
           onStatusUpdated={handleStatusUpdated}
         />
       )}
+
+
     </div>
   );
 };
+
+
 
 export default Pickup;

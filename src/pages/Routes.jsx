@@ -4,6 +4,7 @@ import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
 import { formatDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
+import { SERVICE_STATUS_CONFIG } from '../constants';
 import routeService from '../services/route.service';
 import serviceService from '../services/service.service';
 import hotelService from '../services/hotel.service';
@@ -647,36 +648,26 @@ const Routes = () => {
             onChange={(e) => setSelectedDate(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-md"
           />
-          <Button
-            onClick={generateOptimizedRoute}
-            disabled={loading}
-          >
-            <Navigation className="h-4 w-4 mr-2" />
-            Generar Ruta
-          </Button>
-          
           {isAdmin && (
-            <Button
-              onClick={handleGenerateAutomaticRoutes}
-              disabled={loading}
-              variant="primary"
-            >
-              <Route className="h-4 w-4 mr-2" />
-              Generar Rutas Automáticas
-            </Button>
-          )}
-          
-          {routes.length > 0 && (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={clearTodayRoutes}
-              className="text-red-600 border-red-600 hover:bg-red-50 px-2 py-1 text-sm leading-tight"
-            >
-              <span className="text-center">
-                Limpiar Rutas<br />del Día
-              </span>
-            </Button>
+            <>
+              <Button
+                onClick={generateOptimizedRoute}
+                disabled={loading}
+              >
+                <Navigation className="h-4 w-4 mr-2" />
+                Generar Ruta
+              </Button>
+              
+              <Button
+                onClick={handleGenerateAutomaticRoutes}
+                disabled={loading}
+                variant="primary"
+              >
+                <Route className="h-4 w-4 mr-2" />
+                Generar Rutas Automáticas
+              </Button>
+              
+            </>
           )}
         </div>
       </div>
@@ -832,13 +823,17 @@ const Routes = () => {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 No hay rutas para esta fecha
               </h3>
-              <p className="text-gray-600 mb-4">
-                Genera una ruta optimizada para organizar los recojos del día
-              </p>
-              <Button onClick={generateOptimizedRoute} disabled={loading}>
-                <Navigation className="h-4 w-4 mr-2" />
-                Generar Primera Ruta
-              </Button>
+              {isAdmin && (
+                <>
+                  <p className="text-gray-600 mb-4">
+                    Genera una ruta optimizada para organizar los recojos del día
+                  </p>
+                  <Button onClick={generateOptimizedRoute} disabled={loading}>
+                    <Navigation className="h-4 w-4 mr-2" />
+                    Generar Primera Ruta
+                  </Button>
+                </>
+              )}
             </Card.Content>
           </Card>
         ) : (

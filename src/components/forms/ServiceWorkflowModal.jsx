@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { serviceStorage, bagLabelStorage } from '../../utils/storage';
 import { SERVICE_STATUS } from '../../types';
+import { SERVICE_STATUS_CONFIG } from '../../constants';
 import { useNotifications } from '../../store/NotificationContext';
 import { formatDate, getStatusColor, getStatusText } from '../../utils';
 import Button from '../ui/Button';
@@ -371,8 +372,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           <Card className="mb-6">
             <Card.Content className="p-4">
               <div className="flex items-center space-x-3">
-                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(service.status)}`}>
-                  {getStatusText(service.status)}
+                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || getStatusColor(service.status)}`}>
+                  {SERVICE_STATUS_CONFIG[service.status]?.label || getStatusText(service.status)}
                 </span>
                 <span className="text-sm text-gray-500">
                   Estado actual del servicio

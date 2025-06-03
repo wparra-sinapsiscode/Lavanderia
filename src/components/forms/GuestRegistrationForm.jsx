@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
-import { calculateServicePrice, getAutomaticPriority } from '../../utils';
+import { getAutomaticPriority } from '../../utils';
 import { SERVICE_STATUS } from '../../types';
-import { ZONES } from '../../constants';
+import { ZONES, SERVICE_STATUS_CONFIG } from '../../constants';
 import guestService from '../../services/guest.service';
 import hotelService from '../../services/hotel.service';
 import serviceService from '../../services/service.service';
@@ -13,24 +13,37 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
 
-const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
+const GuestRegistrationForm = ({ 
+  onClose, 
+  onServiceCreated, 
+  isEditMode = false, 
+  initialData = null, 
+  onServiceUpdated = null 
+}) => {
   const { user } = useAuth();
   const { showNotification } = useNotifications();
   const [hotels, setHotels] = useState([]);
   const [selectedHotel, setSelectedHotel] = useState(null);
-  const [estimatedPrice, setEstimatedPrice] = useState(0);
   const [repartidores, setRepartidores] = useState([]);
   const [suggestedRepartidor, setSuggestedRepartidor] = useState(null);
   // Estado para controlar si el campo de contacto debe bloquearse
   const [contactFieldLocked, setContactFieldLocked] = useState(false);
 
   const { register, handleSubmit, watch, reset, setValue, formState: { errors } } = useForm({
-    defaultValues: {
+    defaultValues: isEditMode && initialData ? {
+      guestName: initialData.guestName || '',
+      hotelId: initialData.hotelId || '',
+      repartidorId: initialData.repartidorId || '',
+      bagCount: initialData.bagCount || 1,
+      roomNumber: initialData.roomNumber || '',
+      observations: initialData.observations || '',
+      priority: initialData.priority || 'normal'
+    } : {
       guestName: '',
       hotelId: '',
       repartidorId: '',
       bagCount: 1,
-      roomNumber: '', // Nuevo campo para número de habitación
+      roomNumber: '',
       observations: '',
       priority: 'auto'
     }
@@ -41,6 +54,21 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
   useEffect(() => {
     fetchInitialData();
   }, []);
+
+  // Efecto para configurar el hotel seleccionado en modo edición
+  useEffect(() => {
+    if (isEditMode && initialData && hotels.length > 0) {
+      // Buscar el hotel correspondiente al servicio
+      const hotelId = initialData.hotelId || (typeof initialData.hotel === 'object' ? initialData.hotel.id : null);
+      if (hotelId) {
+        const hotel = hotels.find(h => h.id === hotelId);
+        if (hotel) {
+          setSelectedHotel(hotel);
+          console.log('Hotel seleccionado para edición:', hotel);
+        }
+      }
+    }
+  }, [isEditMode, initialData, hotels]);
   
   const fetchInitialData = async () => {
     try {
@@ -120,23 +148,86 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
     }
   }, [watchedFields.hotelId, hotels, repartidores, setValue, contactFieldLocked, initialRender]);
   
-  // Efecto separado para cálculo de precio cuando cambie bagCount
-  useEffect(() => {
-    if (selectedHotel && watchedFields.bagCount) {
-      // Estimate price based on average weight per bag (5kg) and bag count
-      const estimatedWeight = watchedFields.bagCount * 5;
-      const price = calculateServicePrice(
-        estimatedWeight,
-        selectedHotel.pricePerKg
-      );
-      setEstimatedPrice(price);
-    }
-  }, [watchedFields.bagCount, selectedHotel]);
 
   // Las etiquetas ahora serán generadas por el backend
 
+  // Función específica para manejar edición de servicios
+  const handleEditSubmit = async (data) => {
+    try {
+      console.log('handleEditSubmit ejecutado. initialData:', initialData, 'data:', data);
+      
+      if (!initialData || !initialData.id) {
+        console.error('Error: initialData no válido:', initialData);
+        showNotification({
+          type: 'error',
+          message: 'Error: No se encontró el servicio a editar'
+        });
+        return;
+      }
+
+      // En modo edición, solo validamos los campos que se pueden editar
+      const bagCount = parseInt(data.bagCount, 10);
+      if (isNaN(bagCount) || bagCount <= 0) {
+        showNotification({
+          type: 'error',
+          message: 'La cantidad de bolsas debe ser un número válido mayor a 0'
+        });
+        return;
+      }
+
+      // Preparar datos de actualización (solo campos editables)
+      const updateData = {
+        roomNumber: data.roomNumber || '',
+        bagCount: bagCount,
+        priority: data.priority === 'auto' ? getAutomaticPriority(data.observations) : data.priority,
+        observations: data.observations || '',
+        internalNotes: (initialData.internalNotes || '') + 
+          `\n[${new Date().toLocaleString()}] Editado por ${user.name}: Campos modificados en formulario de edición`
+      };
+
+      console.log('Datos de actualización:', updateData);
+
+      // Actualizar servicio mediante API
+      const updateResponse = await serviceService.updateService(initialData.id, updateData);
+      
+      if (!updateResponse || !updateResponse.success) {
+        throw new Error(updateResponse?.message || 'Error al actualizar el servicio');
+      }
+
+      showNotification({
+        type: 'success',
+        message: `Servicio actualizado correctamente para ${data.guestName || initialData.guestName}`
+      });
+
+      // Llamar callback de actualización
+      if (onServiceUpdated) {
+        onServiceUpdated(updateResponse.data);
+      }
+
+      // Cerrar formulario
+      if (onClose) {
+        onClose();
+      }
+
+    } catch (error) {
+      console.error('Error al actualizar servicio:', error);
+      showNotification({
+        type: 'error',
+        message: `Error al actualizar servicio: ${error.message}`
+      });
+    }
+  };
+
   const onSubmit = async (data) => {
     try {
+      console.log('onSubmit ejecutado. isEditMode:', isEditMode, 'data:', data);
+      
+      // En modo edición, validaciones diferentes
+      if (isEditMode) {
+        console.log('Entrando en modo edición...');
+        return await handleEditSubmit(data);
+      }
+      
       if (!selectedHotel) {
         showNotification({
           type: 'error',
@@ -281,13 +372,38 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
     <Card>
       <Card.Header>
         <h3 className="text-lg font-semibold text-gray-900">
-          Crear Orden de Recojo
+          {isEditMode ? 'Editar Servicio' : 'Crear Orden de Recojo'}
         </h3>
         <p className="text-sm text-gray-600">
-          Crear nueva orden de recojo para hotel
+          {isEditMode ? 'Modificar datos del servicio existente' : 'Crear nueva orden de recojo para hotel'}
         </p>
       </Card.Header>
       <Card.Content>
+        {/* Información no editable en modo edición */}
+        {isEditMode && initialData && (
+          <div className="bg-gray-50 p-4 rounded-lg mb-6 border">
+            <h4 className="font-medium text-gray-900 mb-3">Información Fija (No editable)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-gray-600">ID del Servicio:</p>
+                <p className="font-medium">{initialData.id}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Estado:</p>
+                <p className="font-medium">{SERVICE_STATUS_CONFIG[initialData.status]?.label || initialData.status}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Hotel:</p>
+                <p className="font-medium">{typeof initialData.hotel === 'object' ? initialData.hotel.name : initialData.hotel}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Zona:</p>
+                <p className="font-medium">{typeof initialData.hotel === 'object' ? initialData.hotel.zone : initialData.hotelZone}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Hotel Selection */}
           <div>
@@ -298,7 +414,8 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
               {...register('hotelId', {
                 required: 'Debe seleccionar un hotel'
               })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              disabled={isEditMode}
+              className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
             >
               <option value="">Seleccionar hotel...</option>
               {hotels.map((hotel) => (
@@ -315,7 +432,7 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
           {/* Contact Name */}
           <div className="relative">
             <Input
-              label={<>Contacto del Hotel <span className="text-red-500">*</span> {contactFieldLocked && <span className="ml-2 text-blue-600 text-xs">(Bloqueado)</span>}</>}
+              label={<>Contacto del Hotel <span className="text-red-500">*</span> {(contactFieldLocked || isEditMode) && <span className="ml-2 text-blue-600 text-xs">{isEditMode ? '(No editable)' : '(Bloqueado)'}</span>}</>}
               {...register('guestName', {
                 required: 'El nombre del contacto es requerido',
                 minLength: {
@@ -324,10 +441,10 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
                 }
               })}
               error={errors.guestName?.message}
-              placeholder="Se autocompletará con el contacto del hotel"
+              placeholder={isEditMode ? "Campo no editable en modo edición" : "Se autocompletará con el contacto del hotel"}
               required
-              disabled={contactFieldLocked}
-              className={contactFieldLocked ? 'bg-gray-100' : ''}
+              disabled={contactFieldLocked || isEditMode}
+              className={(contactFieldLocked || isEditMode) ? 'bg-gray-100' : ''}
             />
           </div>
           
@@ -413,24 +530,6 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
               </p>
             </div>
 
-            {/* Price Estimation */}
-            {selectedHotel && estimatedPrice > 0 && (
-              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-blue-800">
-                      Precio Estimado
-                    </p>
-                    <p className="text-xs text-blue-600 mt-1">
-                      Basado en {watchedFields.bagCount * 5} kg estimados
-                    </p>
-                  </div>
-                  <p className="text-2xl font-bold text-blue-900">
-                    S/ {estimatedPrice.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
 
 
@@ -499,7 +598,7 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
           {/* Submit Buttons */}
           <div className="flex space-x-4">
             <Button type="submit" className="flex-1">
-              Crear Orden de Recojo
+              {isEditMode ? 'Guardar Cambios' : 'Crear Orden de Recojo'}
             </Button>
             {onClose && (
               <Button type="button" variant="outline" onClick={onClose}>

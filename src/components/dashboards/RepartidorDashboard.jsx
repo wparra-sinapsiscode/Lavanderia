@@ -6,6 +6,7 @@ import routeService from '../../services/route.service';
 import { useNotifications } from '../../store/NotificationContext';
 import { formatCurrency, formatDate, getStatusColor, getStatusText, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../../utils';
 import { SERVICE_STATUS } from '../../types';
+import { SERVICE_STATUS_CONFIG } from '../../constants';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import { Package, Clock, CheckCircle, Truck, MapPin, Camera, User } from 'lucide-react';
@@ -393,8 +394,8 @@ const RepartidorDashboard = () => {
                       </div>
                       <div className="text-right">
                         <div className="flex flex-col items-end gap-1">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(service.status)}`}>
-                            {getStatusText(service.status)}
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || getStatusColor(service.status)}`}>
+                            {SERVICE_STATUS_CONFIG[service.status]?.label || getStatusText(service.status)}
                           </span>
                           <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded border ${getServiceTypeColor(service)}`}>
                             {getServiceTypeText(service)}

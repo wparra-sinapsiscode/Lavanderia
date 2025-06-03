@@ -144,6 +144,26 @@ class ServiceService {
   }
   
   /**
+   * Update service data
+   * @param {number} id - Service ID
+   * @param {Object} serviceData - Service data to update
+   * @returns {Promise<Object>} Updated service
+   */
+  async updateService(id, serviceData) {
+    try {
+      const response = await api.put(`/services/${id}`, serviceData);
+      return response.data;
+    } catch (error) {
+      console.error('Update service error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al actualizar servicio',
+        error
+      };
+    }
+  }
+
+  /**
    * Update service status
    * @param {number} id - Service ID
    * @param {Object} statusData - Status data

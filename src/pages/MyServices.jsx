@@ -8,6 +8,7 @@ import Layout from '../components/shared/Layout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import HotelServiceForm from '../components/forms/HotelServiceForm';
+import { SERVICE_STATUS_CONFIG } from '../constants';
 import { 
   Package, 
   FileText, 
@@ -193,20 +194,10 @@ const MyServices = () => {
   };
   
   const getStatusBadgeClass = (status) => {
-    const statusInfo = serviceService.getStatusInfo(status);
+    const statusConfig = SERVICE_STATUS_CONFIG[status] || SERVICE_STATUS_CONFIG[status?.toLowerCase()];
+    if (!statusConfig) return 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800';
     
-    const colorClasses = {
-      'blue': 'bg-blue-100 text-blue-800',
-      'purple': 'bg-purple-100 text-purple-800',
-      'indigo': 'bg-indigo-100 text-indigo-800',
-      'orange': 'bg-orange-100 text-orange-800',
-      'teal': 'bg-teal-100 text-teal-800',
-      'green': 'bg-green-100 text-green-800',
-      'red': 'bg-red-100 text-red-800',
-      'gray': 'bg-gray-100 text-gray-800'
-    };
-    
-    return `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClasses[statusInfo.color] || 'bg-gray-100 text-gray-800'}`;
+    return `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusConfig.badgeClasses}`;
   };
   
   const getPriorityBadgeClass = (priority) => {
@@ -453,7 +444,13 @@ const MyServices = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={getStatusBadgeClass(service.status)}>
-                    {serviceService.getStatusInfo(service.status).label}
+                    {(() => {
+                      console.log('Estado recibido:', service.status);
+                      console.log('Configuración disponible:', Object.keys(SERVICE_STATUS_CONFIG));
+                      const config = SERVICE_STATUS_CONFIG[service.status] || SERVICE_STATUS_CONFIG[service.status?.toLowerCase()];
+                      console.log('Config encontrada:', config);
+                      return config?.label || service.status;
+                    })()}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -472,17 +469,22 @@ const MyServices = () => {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleServiceClick(service.id);
-                    }}
-                  >
-                    <FileText className="h-4 w-4 mr-1" />
-                    Detalles
-                  </Button>
+                  <div className="flex items-center justify-end space-x-2">
+                    <span className={`text-sm font-medium ${SERVICE_STATUS_CONFIG[service.status]?.textColor || SERVICE_STATUS_CONFIG[service.status.toLowerCase()]?.textColor || 'text-gray-600'}`}>
+                      {SERVICE_STATUS_CONFIG[service.status]?.action || SERVICE_STATUS_CONFIG[service.status.toLowerCase()]?.action || 'Pendiente'}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleServiceClick(service.id);
+                      }}
+                    >
+                      <FileText className="h-4 w-4 mr-1" />
+                      Detalles
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}

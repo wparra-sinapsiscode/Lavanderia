@@ -36,3 +36,153 @@ export const SIMULATION_LOCATIONS = {
   HOTEL_MARRIOTT: { lat: -12.1167, lng: -77.0278, name: 'Hotel Marriott' },
   HOTEL_HILTON: { lat: -12.1089, lng: -77.0353, name: 'Hotel Hilton' }
 };
+
+// Service status configuration with colors and translations
+export const SERVICE_STATUS_CONFIG = {
+  // Minúsculas (frontend)
+  pendiente_recojo: {
+    label: 'Pendiente de Recojo',
+    action: 'Pendiente',
+    color: 'amber',
+    bgColor: 'bg-amber-100',
+    textColor: 'text-amber-800',
+    borderColor: 'border-amber-300',
+    badgeClasses: 'bg-amber-100 text-amber-800 border border-amber-300'
+  },
+  asignado_ruta: {
+    label: 'Ruta Asignada',
+    action: 'Ruta Asignada',
+    color: 'blue',
+    bgColor: 'bg-blue-100',
+    textColor: 'text-blue-800',
+    borderColor: 'border-blue-300',
+    badgeClasses: 'bg-blue-100 text-blue-800 border border-blue-300'
+  },
+  recogido: {
+    label: 'Recogido',
+    action: 'Recogido',
+    color: 'purple',
+    bgColor: 'bg-purple-100',
+    textColor: 'text-purple-800',
+    borderColor: 'border-purple-300',
+    badgeClasses: 'bg-purple-100 text-purple-800 border border-purple-300'
+  },
+  rotulado: {
+    label: 'Rotulado',
+    action: 'Rotulado',
+    color: 'orange',
+    bgColor: 'bg-orange-100',
+    textColor: 'text-orange-800',
+    borderColor: 'border-orange-300',
+    badgeClasses: 'bg-orange-100 text-orange-800 border border-orange-300'
+  },
+  en_proceso: {
+    label: 'En Proceso',
+    action: 'Procesando',
+    color: 'indigo',
+    bgColor: 'bg-indigo-100',
+    textColor: 'text-indigo-800',
+    borderColor: 'border-indigo-300',
+    badgeClasses: 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+  },
+  entrega_parcial: {
+    label: 'Entrega Parcial',
+    action: 'Entrega Parcial',
+    color: 'teal',
+    bgColor: 'bg-teal-100',
+    textColor: 'text-teal-800',
+    borderColor: 'border-teal-300',
+    badgeClasses: 'bg-teal-100 text-teal-800 border border-teal-300'
+  },
+  completado: {
+    label: 'Completado',
+    action: 'Completado',
+    color: 'green',
+    bgColor: 'bg-green-100',
+    textColor: 'text-green-800',
+    borderColor: 'border-green-300',
+    badgeClasses: 'bg-green-100 text-green-800 border border-green-300'
+  },
+  cancelado: {
+    label: 'Cancelado',
+    action: 'Cancelado',
+    color: 'red',
+    bgColor: 'bg-red-100',
+    textColor: 'text-red-800',
+    borderColor: 'border-red-300',
+    badgeClasses: 'bg-red-100 text-red-800 border border-red-300'
+  },
+  // Mayúsculas (backend)
+  PENDING_PICKUP: {
+    label: 'Pendiente de Recojo',
+    action: 'Pendiente',
+    color: 'amber',
+    bgColor: 'bg-amber-100',
+    textColor: 'text-amber-800',
+    borderColor: 'border-amber-300',
+    badgeClasses: 'bg-amber-100 text-amber-800 border border-amber-300'
+  },
+  ASSIGNED_TO_ROUTE: {
+    label: 'Ruta Asignada',
+    action: 'Ruta Asignada',
+    color: 'blue',
+    bgColor: 'bg-blue-100',
+    textColor: 'text-blue-800',
+    borderColor: 'border-blue-300',
+    badgeClasses: 'bg-blue-100 text-blue-800 border border-blue-300'
+  },
+  PICKED_UP: {
+    label: 'Recogido',
+    action: 'Recogido',
+    color: 'purple',
+    bgColor: 'bg-purple-100',
+    textColor: 'text-purple-800',
+    borderColor: 'border-purple-300',
+    badgeClasses: 'bg-purple-100 text-purple-800 border border-purple-300'
+  },
+  LABELED: {
+    label: 'Rotulado',
+    action: 'Rotulado',
+    color: 'orange',
+    bgColor: 'bg-orange-100',
+    textColor: 'text-orange-800',
+    borderColor: 'border-orange-300',
+    badgeClasses: 'bg-orange-100 text-orange-800 border border-orange-300'
+  },
+  IN_PROCESS: {
+    label: 'En Proceso',
+    action: 'Procesando',
+    color: 'indigo',
+    bgColor: 'bg-indigo-100',
+    textColor: 'text-indigo-800',
+    borderColor: 'border-indigo-300',
+    badgeClasses: 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+  },
+  PARTIAL_DELIVERY: {
+    label: 'Entrega Parcial',
+    action: 'Entrega Parcial',
+    color: 'teal',
+    bgColor: 'bg-teal-100',
+    textColor: 'text-teal-800',
+    borderColor: 'border-teal-300',
+    badgeClasses: 'bg-teal-100 text-teal-800 border border-teal-300'
+  },
+  COMPLETED: {
+    label: 'Completado',
+    action: 'Completado',
+    color: 'green',
+    bgColor: 'bg-green-100',
+    textColor: 'text-green-800',
+    borderColor: 'border-green-300',
+    badgeClasses: 'bg-green-100 text-green-800 border border-green-300'
+  },
+  CANCELLED: {
+    label: 'Cancelado',
+    action: 'Cancelado',
+    color: 'red',
+    bgColor: 'bg-red-100',
+    textColor: 'text-red-800',
+    borderColor: 'border-red-300',
+    badgeClasses: 'bg-red-100 text-red-800 border border-red-300'
+  }
+};
