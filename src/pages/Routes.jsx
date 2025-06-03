@@ -72,12 +72,18 @@ const Routes = () => {
       
       // Process and set routes
       const routesData = routesResponse.data || routesResponse || [];
-      const routesWithNumbers = Array.isArray(routesData) ? routesData.map((route, index) => {
+      
+      // Sort routes by creation date to ensure consistent numbering
+      const sortedRoutes = Array.isArray(routesData) ? [...routesData].sort((a, b) => 
+        new Date(a.createdAt) - new Date(b.createdAt)
+      ) : [];
+      
+      const routesWithNumbers = sortedRoutes.map((route, index) => {
         if (!route.routeNumber) {
           return { ...route, routeNumber: index + 1 };
         }
         return route;
-      }) : [];
+      });
       
       // Filter out duplicates by ID
       const uniqueRoutes = routesWithNumbers.filter((route, index, array) => 
@@ -477,7 +483,7 @@ const Routes = () => {
             {/* Route Stats */}
             <div className="grid grid-cols-4 gap-3">
               <div className="text-center">
-                <p className="text-xl font-bold text-blue-600">{route.totalPickups || 0}</p>
+                <p className="text-xl font-bold text-blue-600">{route.hotels.reduce((sum, h) => sum + (h.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length || 0), 0)}</p>
                 <p className="text-xs text-gray-600">Recojos</p>
               </div>
               <div className="text-center">
@@ -511,7 +517,13 @@ const Routes = () => {
             {/* Hotel Stops */}
             <div className="space-y-2">
               <h4 className="font-medium text-gray-900">Paradas:</h4>
-              {route.hotels.map((hotel, index) => (
+              {route.hotels.map((hotel, index) => {
+                console.log(`Hotel ${hotel.hotelName}:`, hotel); // Debug log
+                console.log(`Hotel ${hotel.hotelName} services:`, hotel.services); // Debug services
+                hotel.services?.forEach((service, i) => {
+                  console.log(`Service ${i + 1}:`, service.guestName, service.status);
+                });
+                return (
                 <div key={`${route.id}-hotel-${hotel.hotelId}-${index}`} className={`flex items-center justify-between p-2 rounded border ${
                   hotel.completed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
                 }`}>
@@ -524,13 +536,13 @@ const Routes = () => {
                     <div>
                       <p className="text-sm font-medium">{hotel.hotelName}</p>
                       <p className="text-xs text-gray-600">
-                        {hotel.pickups?.length || 0} recojos • {hotel.deliveries?.length || 0} entregas • 
+                        {hotel.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length || 0} recojos • {hotel.deliveries?.length || 0} entregas • 
                         {hotel.estimatedTimeMinutes ? ` ${hotel.estimatedTimeMinutes} min` : hotel.estimatedTime}
                       </p>
                       <div className="flex gap-1 mt-1">
-                        {hotel.pickups?.length > 0 && (
+                        {hotel.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length > 0 && (
                           <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded border-blue-200">
-                            {hotel.pickups.length} Recojos
+                            {hotel.services.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length} Recojos
                           </span>
                         )}
                         {hotel.deliveries?.length > 0 && (
@@ -541,25 +553,40 @@ const Routes = () => {
                       </div>
                     </div>
                   </div>
-                  {!isAdmin && route.repartidorId === user.id && route.status === 'en_progreso' && !hotel.completed && (
-                    <div className="space-y-2">
+                  {!isAdmin && route.repartidorId === user.id && route.status === 'en_progreso' && (
+                    <div className="space-y-1 mt-2">
                       {/* Individual service buttons */}
-                      {hotel.pickups?.map((pickup, pickupIndex) => (
-                        pickup.status === SERVICE_STATUS.PENDING_PICKUP && (
-                          <Button
-                            key={`pickup-${pickup.id}`}
-                            size="sm"
-                            onClick={() => redirectToServiceForm(route.id, index, pickup.id, 'pickup')}
-                            className="w-full"
-                          >
-                            Recoger: {pickup.guestName}
-                          </Button>
+                      {hotel.services?.map((service, serviceIndex) => {
+                        console.log(`Checking service ${service.guestName}:`, {
+                          status: service.status,
+                          shouldShow: service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE'
+                        });
+                        return (
+                        (service.status === 'PENDING_PICKUP' || 
+                         service.status === 'ASSIGNED_TO_ROUTE') && (
+                          <div key={`service-${service.id}`} className="flex items-center gap-3 p-2 bg-blue-50 rounded border border-blue-200">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-900">
+                                {service.guestName} - Hab. {service.roomNumber}
+                              </p>
+                              <p className="text-xs text-gray-600">
+                                {service.bagCount} bolsas • {service.weight || 0}kg
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => redirectToServiceForm(route.id, index, service.id, 'pickup')}
+                            >
+                              Recoger
+                            </Button>
+                          </div>
                         )
-                      ))}
+                        );
+                      })}
                       {hotel.deliveries?.map((delivery, deliveryIndex) => (
-                        (delivery.status === SERVICE_STATUS.PARTIAL_DELIVERY || 
-                         delivery.status === SERVICE_STATUS.COMPLETED ||
-                         delivery.status === SERVICE_STATUS.READY_FOR_DELIVERY) && (
+                        (delivery.status === 'PARTIAL_DELIVERY' || 
+                         delivery.status === 'COMPLETED' ||
+                         delivery.status === 'READY_FOR_DELIVERY') && (
                           <Button
                             key={`delivery-${delivery.id}`}
                             size="sm"
@@ -573,7 +600,8 @@ const Routes = () => {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Actions */}

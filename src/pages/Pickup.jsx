@@ -14,6 +14,7 @@ import GuestRegistrationForm from '../components/forms/GuestRegistrationForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import ServiceDetailedTracker from '../components/ui/ServiceDetailedTracker';
 import { Truck, Clock, Package, MapPin, Plus, RefreshCw, UserCheck, GitBranch } from 'lucide-react';
 
 const Pickup = () => {
@@ -589,11 +590,25 @@ const Pickup = () => {
         />
       )}
 
+      {/* Service Detailed Tracker for Selected Service */}
+      {selectedService && (
+        <ServiceDetailedTracker 
+          service={selectedService}
+          onClose={() => setSelectedService(null)}
+          onStatusUpdate={(newStatus) => {
+            // Handle status update here
+            console.log(`Updating service ${selectedService.id} to status: ${newStatus}`);
+            // You can call your existing handleConfirmPickup or similar function
+          }}
+          className="mb-6"
+        />
+      )}
+
       {/* Pending Pickups List */}
       <Card>
         <Card.Header>
           <h3 className="text-lg font-semibold text-gray-900">
-            Servicios Activos - Seguimiento
+            Servicios Activos - Lista Detallada
           </h3>
         </Card.Header>
         <Card.Content className="p-0">
@@ -636,12 +651,17 @@ const Pickup = () => {
                     <tr key={service.id}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {service.guestName}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Hab. {service.roomNumber}
-                          </p>
+                          <button
+                            onClick={() => setSelectedService(service)}
+                            className="text-left hover:bg-gray-50 p-1 rounded transition-colors"
+                          >
+                            <p className="text-sm font-medium text-gray-900 hover:text-blue-600">
+                              {service.guestName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              Hab. {service.roomNumber}
+                            </p>
+                          </button>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
