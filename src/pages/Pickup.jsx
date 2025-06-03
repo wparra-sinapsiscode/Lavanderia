@@ -14,7 +14,6 @@ import GuestRegistrationForm from '../components/forms/GuestRegistrationForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import ServiceDetailedTracker from '../components/ui/ServiceDetailedTracker';
 import { Truck, Clock, Package, MapPin, Plus, RefreshCw, UserCheck, GitBranch } from 'lucide-react';
 
 const Pickup = () => {
@@ -590,19 +589,6 @@ const Pickup = () => {
         />
       )}
 
-      {/* Service Detailed Tracker for Selected Service */}
-      {selectedService && (
-        <ServiceDetailedTracker 
-          service={selectedService}
-          onClose={() => setSelectedService(null)}
-          onStatusUpdate={(newStatus) => {
-            // Handle status update here
-            console.log(`Updating service ${selectedService.id} to status: ${newStatus}`);
-            // You can call your existing handleConfirmPickup or similar function
-          }}
-          className="mb-6"
-        />
-      )}
 
       {/* Pending Pickups List */}
       <Card>

@@ -7,6 +7,15 @@ import Card from './Card';
 
 const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = "" }) => {
   const [selectedNewStatus, setSelectedNewStatus] = useState('');
+  const [statusNotes, setStatusNotes] = useState('');
+
+  // Helper function to get current step index without circular dependency
+  const getCurrentStepIndex = () => {
+    const stepIds = ['PENDING_PICKUP', 'ASSIGNED_TO_ROUTE', 'PICKED_UP', 'LABELED', 'IN_PROCESS', 'PARTIAL_DELIVERY', 'COMPLETED'];
+    return stepIds.findIndex(stepId => stepId === service?.status);
+  };
+
+  const currentStepIndex = getCurrentStepIndex();
 
   const steps = [
     {
@@ -41,7 +50,7 @@ const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = 
       icon: Tag,
       description: 'Rótulos colocados y fotos tomadas',
       requirements: [
-        { key: 'picked_up', label: 'Servicio recogido', check: service?.status === 'PICKED_UP' || getCurrentStepIndex() > 2 }
+        { key: 'picked_up', label: 'Servicio recogido', check: service?.status === 'PICKED_UP' || currentStepIndex > 2 }
       ]
     },
     {
@@ -50,7 +59,7 @@ const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = 
       icon: Cog,
       description: 'Lavandería en proceso',
       requirements: [
-        { key: 'labeled', label: 'Servicio rotulado', check: service?.status === 'LABELED' || getCurrentStepIndex() > 3 },
+        { key: 'labeled', label: 'Servicio rotulado', check: service?.status === 'LABELED' || currentStepIndex > 3 },
         { key: 'labels', label: 'Todas las bolsas etiquetadas', check: true } // This would need to be checked against actual labels
       ]
     },
@@ -60,7 +69,7 @@ const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = 
       icon: PackageCheck,
       description: 'Entrega parcial realizada',
       requirements: [
-        { key: 'in_process', label: 'Servicio en proceso', check: service?.status === 'IN_PROCESS' || getCurrentStepIndex() > 4 }
+        { key: 'in_process', label: 'Servicio en proceso', check: service?.status === 'IN_PROCESS' || currentStepIndex > 4 }
       ]
     },
     {
@@ -71,12 +80,6 @@ const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = 
       requirements: []
     }
   ];
-
-  function getCurrentStepIndex() {
-    return steps.findIndex(step => step.id === service?.status);
-  }
-
-  const currentStepIndex = getCurrentStepIndex();
 
   const getStepState = (stepIndex) => {
     if (service?.status === 'CANCELLED') {
@@ -116,8 +119,9 @@ const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = 
 
   const handleStatusUpdate = () => {
     if (selectedNewStatus && onStatusUpdate) {
-      onStatusUpdate(selectedNewStatus);
+      onStatusUpdate(selectedNewStatus, statusNotes);
       setSelectedNewStatus('');
+      setStatusNotes('');
     }
   };
 
@@ -315,31 +319,61 @@ const ServiceDetailedTracker = ({ service, onStatusUpdate, onClose, className = 
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Actualizar Estado</h3>
               
-              <div className="flex items-center space-x-4">
-                <select
-                  value={selectedNewStatus}
-                  onChange={(e) => setSelectedNewStatus(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Seleccionar nuevo estado</option>
-                  {steps.map(step => (
-                    <option 
-                      key={step.id} 
-                      value={step.id}
-                      disabled={!canAdvanceToStatus(step.id)}
-                    >
-                      {step.label} {!canAdvanceToStatus(step.id) ? '(Requisitos no cumplidos)' : ''}
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cambiar estado a:
+                  </label>
+                  <select
+                    value={selectedNewStatus}
+                    onChange={(e) => setSelectedNewStatus(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Seleccionar nuevo estado</option>
+                    {steps.map(step => (
+                      <option 
+                        key={step.id} 
+                        value={step.id}
+                        disabled={!canAdvanceToStatus(step.id)}
+                      >
+                        {step.label} {!canAdvanceToStatus(step.id) ? '(Requisitos no cumplidos)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notas adicionales (opcional)
+                  </label>
+                  <textarea
+                    value={statusNotes}
+                    onChange={(e) => setStatusNotes(e.target.value)}
+                    placeholder="Agregar observaciones sobre el cambio de estado..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  />
+                </div>
                 
-                <Button
-                  onClick={handleStatusUpdate}
-                  disabled={!selectedNewStatus}
-                  className="px-6"
-                >
-                  Actualizar
-                </Button>
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={handleStatusUpdate}
+                    disabled={!selectedNewStatus}
+                    className="px-6"
+                  >
+                    Actualizar Estado
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedNewStatus('');
+                      setStatusNotes('');
+                    }}
+                    className="px-6"
+                  >
+                    Cancelar
+                  </Button>
+                </div>
               </div>
             </div>
           )}
