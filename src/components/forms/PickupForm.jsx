@@ -449,7 +449,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           observations: data.observations,
           pickupDate: new Date().toISOString(),
           collectorName: data.collectorName,
-          status: 'PENDING_PICKUP', // Mantener estado hasta confirmación manual
+          status: 'PICKED_UP', // Cambiar automáticamente al completar recogida
           photos,
           signature,
           geolocation: geoLocation,

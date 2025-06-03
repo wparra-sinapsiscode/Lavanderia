@@ -18,6 +18,36 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const [bagsToDeliver, setBagsToDeliver] = useState(Math.ceil(service.bagCount / 2));
   const [showRotuladoForm, setShowRotuladoForm] = useState(false);
 
+  // Debug log al abrir el modal
+  console.log('🔍 DEBUG - ServiceWorkflowModal opened with service:', {
+    id: service.id,
+    status: service.status,
+    guestName: service.guestName,
+    SERVICE_STATUS_VALUES: SERVICE_STATUS,
+    allServiceData: service
+  });
+
+  // Mapeo de estados para manejar ambos formatos
+  const statusMapping = {
+    'PENDING_PICKUP': SERVICE_STATUS.PENDING_PICKUP,
+    'pendiente_recojo': SERVICE_STATUS.PENDING_PICKUP,
+    'ASSIGNED_TO_ROUTE': SERVICE_STATUS.ASSIGNED_TO_ROUTE,
+    'asignado_ruta': SERVICE_STATUS.ASSIGNED_TO_ROUTE,
+    'PICKED_UP': SERVICE_STATUS.PICKED_UP,
+    'recogido': SERVICE_STATUS.PICKED_UP,
+    'LABELED': SERVICE_STATUS.LABELED,
+    'rotulado': SERVICE_STATUS.LABELED,
+    'IN_PROCESS': SERVICE_STATUS.IN_PROCESS,
+    'en_proceso': SERVICE_STATUS.IN_PROCESS,
+    'PARTIAL_DELIVERY': SERVICE_STATUS.PARTIAL_DELIVERY,
+    'entrega_parcial': SERVICE_STATUS.PARTIAL_DELIVERY,
+    'COMPLETED': SERVICE_STATUS.COMPLETED,
+    'completado': SERVICE_STATUS.COMPLETED
+  };
+
+  // Normalizar el estado del servicio
+  const normalizedServiceStatus = statusMapping[service.status] || service.status;
+
   const workflowSteps = [
     {
       status: SERVICE_STATUS.PENDING_PICKUP,
@@ -71,7 +101,14 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   ];
 
   const getCurrentStepIndex = () => {
-    return workflowSteps.findIndex(step => step.status === service.status);
+    console.log('🔍 DEBUG - ServiceWorkflowModal getCurrentStepIndex:', {
+      originalStatus: service.status,
+      normalizedStatus: normalizedServiceStatus,
+      workflowSteps: workflowSteps.map(s => s.status)
+    });
+    const index = workflowSteps.findIndex(step => step.status === normalizedServiceStatus);
+    console.log('🔍 DEBUG - Current step index:', index);
+    return index;
   };
 
   const getSelectedStepIndex = () => {
@@ -87,12 +124,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       
       case SERVICE_STATUS.LABELED:
         // To mark as labeled, service must be picked up first
-        return service.status === SERVICE_STATUS.PICKED_UP;
+        return normalizedServiceStatus === SERVICE_STATUS.PICKED_UP;
       
       case SERVICE_STATUS.IN_PROCESS:
         // To mark as in process, service must have labels
         const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
-        return service.status === SERVICE_STATUS.LABELED && 
+        return normalizedServiceStatus === SERVICE_STATUS.LABELED && 
                serviceLabels.length === service.bagCount &&
                serviceLabels.every(label => label.label && label.label.trim() !== '');
       
@@ -111,7 +148,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       
       case SERVICE_STATUS.IN_PROCESS:
         const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
-        if (service.status !== SERVICE_STATUS.LABELED) {
+        if (normalizedServiceStatus !== SERVICE_STATUS.LABELED) {
           return 'Para marcar como "En Proceso", el servicio debe estar rotulado';
         }
         if (serviceLabels.length !== service.bagCount) {
@@ -138,13 +175,13 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     if (!validateStatusRequirements(targetStatus)) return false;
     
     // Special logic for bifurcation from "En Proceso"
-    if (service.status === SERVICE_STATUS.IN_PROCESS) {
+    if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
       // From "En Proceso" can go to either "Entrega Parcial" or "Completado"
       return targetStatus === SERVICE_STATUS.PARTIAL_DELIVERY || targetStatus === SERVICE_STATUS.COMPLETED;
     }
     
     // From "Entrega Parcial" can only go to "Completado"
-    if (service.status === SERVICE_STATUS.PARTIAL_DELIVERY) {
+    if (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY) {
       return targetStatus === SERVICE_STATUS.COMPLETED;
     }
     
@@ -287,20 +324,31 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const requiresValidation = !validateStatusRequirements(step.status);
     const requirementMessage = getStatusRequirementMessage(step.status);
     
+    // Debug logs
+    if (index === 0 || isActive) {
+      console.log(`🔍 DEBUG - StatusStep ${step.title}:`, {
+        index,
+        isActive,
+        isCompleted,
+        isSelected,
+        stepStatus: step.status,
+        serviceStatus: service.status
+      });
+    }
+    
     return (
       <div className="flex flex-col items-center relative flex-1">
         <div className="flex flex-col items-center">
           <div
             className={`
-              w-12 h-12 rounded-full flex items-center justify-center border-2 cursor-pointer transition-all relative
-              ${isSelected ? `bg-${step.color}-600 border-${step.color}-600 text-white` : 
+              w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all relative
+              ${isActive ? `bg-${step.color}-600 border-${step.color}-600 text-white animate-pulse` :
                 isCompleted ? `bg-${step.color}-100 border-${step.color}-500 text-${step.color}-600` :
-                isActive ? `bg-${step.color}-50 border-${step.color}-400 text-${step.color}-600` :
                 'bg-gray-100 border-gray-300 text-gray-400'}
-              ${canProgress ? 'hover:scale-105' : 'opacity-50 cursor-not-allowed'}
-              ${requiresValidation && !isCompleted && !isActive ? 'border-red-300 bg-red-50' : ''}
+              ${isActive || isCompleted ? '' : 'opacity-50'}
+              cursor-default
             `}
-            onClick={() => canProgress && setSelectedStatus(step.status)}
+            onClick={() => {}}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
           >
             <IconComponent className="h-6 w-6" />
@@ -372,8 +420,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           <Card className="mb-6">
             <Card.Content className="p-4">
               <div className="flex items-center space-x-3">
-                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || getStatusColor(service.status)}`}>
-                  {SERVICE_STATUS_CONFIG[service.status]?.label || getStatusText(service.status)}
+                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || SERVICE_STATUS_CONFIG[normalizedServiceStatus]?.badgeClasses || getStatusColor(service.status)}`}>
+                  {SERVICE_STATUS_CONFIG[service.status]?.label || SERVICE_STATUS_CONFIG[normalizedServiceStatus]?.label || getStatusText(service.status)}
                 </span>
                 <span className="text-sm text-gray-500">
                   Estado actual del servicio
@@ -408,13 +456,23 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             </div>
           </div>
 
-          {/* Selected Status Info */}
-          {selectedStatus && selectedStatus !== service.status && (
+          {/* Progress Info */}
+          {true && (
             <Card className="mb-6">
               <Card.Content className="p-4">
                 <h5 className="font-medium text-gray-900 mb-2">
-                  Cambiar estado a: {getStatusText(selectedStatus)}
+                  Información del Progreso
                 </h5>
+                <p className="text-sm text-gray-600 mb-3">
+                  Los estados cambian automáticamente cuando se completan las acciones correspondientes:
+                </p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>• <strong>Repartidor en Camino:</strong> Al iniciar la ruta</li>
+                  <li>• <strong>Recogido:</strong> Al completar el formulario de recogida</li>
+                  <li>• <strong>Rotulado:</strong> Al completar el formulario de rotulado</li>
+                  <li>• <strong>En Proceso:</strong> Cuando inicia el proceso de lavado</li>
+                  <li>• <strong>Completado:</strong> Al registrar la entrega final</li>
+                </ul>
                 
                 {/* Requirements Validation */}
                 {!validateStatusRequirements(selectedStatus) && (
@@ -570,26 +628,13 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             </Card.Content>
           </Card>
 
-          {/* Action Buttons */}
-          <div className="flex space-x-4">
+          {/* Close Button */}
+          <div className="flex justify-end">
             <Button
-              onClick={handleStatusUpdate}
-              disabled={
-                !selectedStatus || 
-                selectedStatus === service.status || 
-                !canProgressTo(selectedStatus) ||
-                (selectedStatus === SERVICE_STATUS.PARTIAL_DELIVERY && bagsToDeliver === 0)
-              }
-              className="flex-1"
-            >
-              Actualizar Estado
-              {selectedStatus === SERVICE_STATUS.PARTIAL_DELIVERY && ` (${bagsToDeliver}/${service.bagCount} bolsas)`}
-            </Button>
-            <Button
-              variant="outline"
+              variant="primary"
               onClick={onClose}
             >
-              Cancelar
+              Cerrar
             </Button>
           </div>
         </div>

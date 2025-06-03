@@ -184,6 +184,16 @@ class ServiceService {
       };
     }
   }
+
+  /**
+   * Update service in route
+   * @param {number} id - Service ID
+   * @param {Object} updateData - Update data
+   * @returns {Promise<Object>} Updated service
+   */
+  async updateServiceInRoute(id, updateData) {
+    return this.updateServiceStatus(id, updateData);
+  }
   
   /**
    * Register partial delivery
