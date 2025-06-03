@@ -415,7 +415,8 @@ const Routes = () => {
                     <div>
                       <p className="text-sm font-medium">{hotel.hotelName}</p>
                       <p className="text-xs text-gray-600">
-                        {hotel.pickups?.length || 0} recojos • {hotel.deliveries?.length || 0} entregas • {hotel.estimatedTime}
+                        {hotel.pickups?.length || 0} recojos • {hotel.deliveries?.length || 0} entregas • 
+                        {hotel.estimatedTimeMinutes ? ` ${hotel.estimatedTimeMinutes} min` : hotel.estimatedTime}
                       </p>
                       <div className="flex gap-1 mt-1">
                         {hotel.pickups?.length > 0 && (
