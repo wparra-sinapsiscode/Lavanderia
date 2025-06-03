@@ -70,7 +70,8 @@ const Routes = () => {
       setHotels(validHotels);
       
       // Process and set routes
-      const routesWithNumbers = Array.isArray(routesResponse) ? routesResponse.map((route, index) => {
+      const routesData = routesResponse.data || routesResponse || [];
+      const routesWithNumbers = Array.isArray(routesData) ? routesData.map((route, index) => {
         if (!route.routeNumber) {
           return { ...route, routeNumber: index + 1 };
         }
@@ -118,7 +119,8 @@ const Routes = () => {
     
     try {
       // Check if routes already exist for today via API
-      const existingRoutes = await routeService.getAllRoutes({ date: selectedDate });
+      const existingRoutesResponse = await routeService.getAllRoutes({ date: selectedDate });
+      const existingRoutes = existingRoutesResponse.data || [];
       
       if (existingRoutes.length > 0) {
         error('Rutas Existentes', `Ya existen ${existingRoutes.length} rutas para la fecha ${selectedDate}. Usa el botón "Limpiar Rutas del Día" si quieres regenerar.`);
@@ -145,7 +147,8 @@ const Routes = () => {
       }
       
       // Generate optimized route via API
-      const generatedRoutes = await routeService.generateOptimizedRoute(selectedDate);
+      const response = await routeService.generateOptimizedRoute(selectedDate);
+      const generatedRoutes = response.data || [];
       
       if (!generatedRoutes || generatedRoutes.length === 0) {
         error('Sin Rutas', 'No se pudieron crear rutas. Verifica que existan servicios pendientes asignados a repartidores.');
@@ -237,6 +240,40 @@ const Routes = () => {
       error('Error', `No se pudo iniciar la ruta: ${err.message || 'Error desconocido'}`);
       
       // No fallback, just report the error and don't change state
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateAutomaticRoutes = async () => {
+    try {
+      setLoading(true);
+      
+      // Llamar al servicio para generar rutas automáticas
+      const result = await routeService.generateAutomaticRoutes({
+        date: selectedDate,
+        zones: [] // Vacío significa todas las zonas para admin
+      });
+      
+      if (result.success) {
+        success('Rutas Generadas', result.message);
+        // Recargar las rutas para mostrar las nuevas
+        await loadRoutesData();
+        
+        // Mostrar resumen si existe
+        if (result.summary) {
+          const { totalRoutes, totalServices, zones } = result.summary;
+          success(
+            'Resumen de Generación',
+            `${totalRoutes} rutas creadas para ${totalServices} servicios en zonas: ${zones.join(', ')}`
+          );
+        }
+      } else {
+        error('Error', result.message || 'No se pudieron generar las rutas');
+      }
+    } catch (err) {
+      console.error('Error generando rutas automáticas:', err);
+      error('Error', err.message || 'Error al generar rutas automáticas');
     } finally {
       setLoading(false);
     }
@@ -508,6 +545,17 @@ const Routes = () => {
             <Navigation className="h-4 w-4 mr-2" />
             Generar Ruta
           </Button>
+          
+          {isAdmin && (
+            <Button
+              onClick={handleGenerateAutomaticRoutes}
+              disabled={loading}
+              variant="primary"
+            >
+              <Route className="h-4 w-4 mr-2" />
+              Generar Rutas Automáticas
+            </Button>
+          )}
           
           {routes.length > 0 && (
             <Button

@@ -19,28 +19,18 @@ const routeService = {
       const params = { date, ...options };
       const response = await api.post('/routes/generate', params);
       
-      // Improved validation for mock data
-      if (response.data?.fromMock === true || response.data?.isMockData === true) {
-        console.warn('Rechazando datos simulados de la API (mock data detected)');
-        return { data: [], isMockData: true };
-      }
+      // Improved validation for mock data - commented out to allow all data
+      // if (response.data?.fromMock === true || response.data?.isMockData === true) {
+      //   console.warn('Rechazando datos simulados de la API (mock data detected)');
+      //   return { data: [], isMockData: true };
+      // }
       
       // Normalize response data structure
       const routeData = response.data?.data || [];
       
-      // Improved mock data filtering with more robust checks
-      const filteredData = Array.isArray(routeData) 
-        ? routeData.filter(route => {
-            // Check for various mock identifiers
-            return !(
-              route.repartidorId?.toString().toLowerCase().includes('mock') ||
-              route.id?.toString().toLowerCase().includes('mock') ||
-              route.isMock === true
-            );
-          })
-        : [];
-          
-      return { data: filteredData, total: filteredData.length };
+      // Return data without filtering
+      const dataArray = Array.isArray(routeData) ? routeData : [];
+      return { data: dataArray, total: dataArray.length };
     } catch (error) {
       console.error('Error generating optimized route:', error);
       // Enhanced error handling with error information
@@ -61,28 +51,18 @@ const routeService = {
     try {
       const response = await api.get('/routes', { params: filters });
       
-      // Improved validation for mock data
-      if (response.data?.fromMock === true || response.data?.isMockData === true) {
-        console.warn('Rechazando datos simulados de la API (mock data detected)');
-        return { data: [], isMockData: true };
-      }
+      // Improved validation for mock data - commented out to allow all data
+      // if (response.data?.fromMock === true || response.data?.isMockData === true) {
+      //   console.warn('Rechazando datos simulados de la API (mock data detected)');
+      //   return { data: [], isMockData: true };
+      // }
       
       // Normalize response data structure
       const routeData = response.data?.data || [];
       
-      // Improved mock data filtering with more robust checks
-      const filteredData = Array.isArray(routeData) 
-        ? routeData.filter(route => {
-            // Check for various mock identifiers
-            return !(
-              route.repartidorId?.toString().toLowerCase().includes('mock') ||
-              route.id?.toString().toLowerCase().includes('mock') ||
-              route.isMock === true
-            );
-          })
-        : [];
-        
-      return { data: filteredData, total: filteredData.length };
+      // Return data without filtering
+      const dataArray = Array.isArray(routeData) ? routeData : [];
+      return { data: dataArray, total: dataArray.length };
     } catch (error) {
       console.error('Error fetching routes:', error);
       // Enhanced error handling with error information
@@ -352,6 +332,30 @@ const routeService = {
     } catch (error) {
       console.error(`Error deleting route ${routeId}:`, error);
       const errorMessage = error.response?.data?.message || error.message || `Error al eliminar ruta ${routeId}`;
+      throw new Error(errorMessage);
+    }
+  },
+
+  /**
+   * Generate automatic routes for pickup services
+   * @param {Object} data - Route generation parameters
+   * @param {string} data.date - Date for routes (YYYY-MM-DD)
+   * @param {Array<string>} data.zones - Zones to generate routes for
+   * @returns {Promise<Object>} - Generated routes
+   */
+  generateAutomaticRoutes: async (data) => {
+    try {
+      const response = await api.post('/routes/generate-automatic', data);
+      
+      // Check for mock data
+      if (response.data?.fromMock === true || response.data?.isMockData === true) {
+        throw new Error('Mock data detected - not using simulated data');
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error generating automatic routes:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Error al generar rutas automáticas';
       throw new Error(errorMessage);
     }
   }
