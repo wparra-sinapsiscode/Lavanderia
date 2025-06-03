@@ -767,9 +767,9 @@ const Pickup = () => {
               <li>• Verificar la identidad del huésped antes del recojo</li>
               <li>• Pesar las bolsas y registrar el peso exacto</li>
               <li>• Tomar fotos de las bolsas antes del recojo</li>
-              <li>• Obtener la firma digital del cliente</li>
               <li>• Verificar que la ubicación sea correcta</li>
               <li>• Agregar observaciones si hay algo especial</li>
+              <li>• Registrar el nombre del responsable que entrega</li>
             </ul>
           </Card.Content>
         </Card>

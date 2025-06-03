@@ -115,6 +115,78 @@ class ServiceService {
       };
     }
   }
+
+  /**
+   * Upload photos for a service
+   * @param {string} serviceId - Service ID
+   * @param {File[]} photos - Array of photo files
+   * @param {string} type - Type of photos (pickup, labeling, delivery)
+   * @returns {Promise<Object>} Upload result
+   */
+  async uploadServicePhotos(serviceId, photos, type = 'pickup') {
+    try {
+      const formData = new FormData();
+      photos.forEach(photo => {
+        formData.append('photos', photo);
+      });
+      formData.append('type', type);
+
+      const response = await api.post(`/services/${serviceId}/photos`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Upload photos error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al subir fotos',
+        error
+      };
+    }
+  }
+
+  /**
+   * Upload signature for a service
+   * @param {string} serviceId - Service ID
+   * @param {string|Blob} signature - Signature data (base64 or blob)
+   * @param {string} type - Type of signature (pickup, delivery)
+   * @returns {Promise<Object>} Upload result
+   */
+  async uploadSignature(serviceId, signature, type = 'pickup') {
+    try {
+      const formData = new FormData();
+      
+      // If signature is a blob, append it directly
+      if (signature instanceof Blob) {
+        formData.append('signature', signature, 'signature.png');
+      } else if (typeof signature === 'string' && signature.startsWith('data:image')) {
+        // If it's base64, convert to blob first
+        const response = await fetch(signature);
+        const blob = await response.blob();
+        formData.append('signature', blob, 'signature.png');
+      } else {
+        throw new Error('Invalid signature format');
+      }
+      
+      formData.append('type', type);
+
+      const response = await api.post(`/services/${serviceId}/signature`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Upload signature error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al subir firma',
+        error
+      };
+    }
+  }
   
   /**
    * Calculate service price based on weight and service options
@@ -250,34 +322,6 @@ class ServiceService {
     }
   }
   
-  /**
-   * Upload signature for a service
-   * @param {number} id - Service ID
-   * @param {Blob} signatureBlob - Signature blob from SignatureCanvas
-   * @param {string} type - Signature type (pickup or delivery)
-   * @returns {Promise<Object>} Signature upload result
-   */
-  async uploadSignature(id, signatureBlob, type = 'pickup') {
-    try {
-      const formData = new FormData();
-      formData.append('type', type);
-      formData.append('signature', signatureBlob, 'signature.png');
-      
-      const response = await api.post(`/services/${id}/signature`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Upload signature error:', error);
-      return {
-        success: false,
-        message: error.response?.data?.message || 'Error al subir firma',
-        error
-      };
-    }
-  }
   
   /**
    * Get pending services

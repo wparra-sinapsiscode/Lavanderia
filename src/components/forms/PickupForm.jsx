@@ -11,7 +11,6 @@ import routeService from '../../services/route.service';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
-import SignatureCanvas from '../ui/SignatureCanvas';
 import DireccionConGPS from '../ui/DireccionConGPS';
 import { Camera, MapPin, Package, Scale } from 'lucide-react';
 
@@ -28,7 +27,6 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
   const [service, setService] = useState(null);
   const [hotel, setHotel] = useState(null);
   const [photos, setPhotos] = useState([]);
-  const [signature, setSignature] = useState('');
   const [geoLocation, setGeoLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showRedirectToLabels, setShowRedirectToLabels] = useState(false);
@@ -296,15 +294,6 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
 
     try {
       // Validaciones
-      if (!signature) {
-        showNotification({
-          type: 'error',
-          message: 'Debe capturar la firma del cliente'
-        });
-        setLoading(false);
-        return;
-      }
-
       if (photos.length === 0) {
         showNotification({
           type: 'error',
@@ -417,17 +406,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
               await serviceService.uploadServicePhotos(serviceId, photos.map(p => p.file), 'pickup');
             }
             
-            // Then upload signature
-            if (signature) {
-              console.log('Subiendo firma a la API...');
-              // Convert signature from base64 to blob
-              const signatureBlob = await (async () => {
-                const res = await fetch(signature);
-                return res.blob();
-              })();
-              
-              await serviceService.uploadSignature(serviceId, signatureBlob, 'pickup');
-            }
+            // Signature upload removed - no longer needed
             
             updateSuccess = true;
             console.log('Recojo guardado exitosamente en la API');
@@ -451,7 +430,6 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           collectorName: data.collectorName,
           status: 'PICKED_UP', // Cambiar automáticamente al completar recogida
           photos,
-          signature,
           geolocation: geoLocation,
           repartidor: user.name,
           repartidorId: user.id,
@@ -483,7 +461,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
       if (updateSuccess) {
         showNotification({
           type: 'success',
-          message: `Datos de recogida registrados para ${service.guestName}. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}. RECUERDE: Debe confirmar la recogida desde la lista de servicios${usedLocalStorage ? ' (guardado localmente)' : ''}`
+          message: `Datos de recogida registrados para ${service.guestName}. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}${usedLocalStorage ? ' (guardado localmente)' : ''}`
         });
 
         // Show redirect to labels option
@@ -858,17 +836,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
             )}
           </div>
 
-          {/* Signature */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Firma del Cliente <span className="text-red-500">*</span>
-            </label>
-            <SignatureCanvas
-              onSignatureChange={setSignature}
-              width={400}
-              height={150}
-            />
-          </div>
+          {/* Signature section removed */}
 
           {/* Submit Buttons */}
           <div className="flex space-x-4">

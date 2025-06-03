@@ -108,7 +108,23 @@ export const serviceStorage = {
       services[index] = { ...services[index], ...updatedData };
       return serviceStorage.setServices(services);
     }
-    return false;
+    // If service doesn't exist in localStorage, add it
+    console.warn(`Service ${serviceId} not found in localStorage, adding it`);
+    const newService = { id: serviceId, ...updatedData };
+    services.push(newService);
+    return serviceStorage.setServices(services);
+  },
+  
+  // New method to update or create service
+  upsertService: (service) => {
+    const services = serviceStorage.getServices();
+    const index = services.findIndex(s => s.id === service.id);
+    if (index !== -1) {
+      services[index] = { ...services[index], ...service };
+    } else {
+      services.push(service);
+    }
+    return serviceStorage.setServices(services);
   },
   getServicesByZone: (zone) => {
     const services = serviceStorage.getServices();
