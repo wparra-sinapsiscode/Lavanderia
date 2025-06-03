@@ -144,13 +144,14 @@ const HotelServiceForm = () => {
       return false;
     }
     
-    if (!formData.repartidorId) {
-      showNotification({
-        type: 'error',
-        message: 'Debe seleccionar un repartidor'
-      });
-      return false;
-    }
+    // Repartidor es opcional - se asignará cuando se genere la ruta
+    // if (!formData.repartidorId) {
+    //   showNotification({
+    //     type: 'error',
+    //     message: 'Debe seleccionar un repartidor'
+    //   });
+    //   return false;
+    // }
     
     const bagCount = parseInt(formData.bagCount, 10);
     if (isNaN(bagCount) || bagCount <= 0) {
