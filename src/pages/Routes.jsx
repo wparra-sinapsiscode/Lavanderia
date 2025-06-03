@@ -648,27 +648,6 @@ const Routes = () => {
             onChange={(e) => setSelectedDate(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-md"
           />
-          {isAdmin && (
-            <>
-              <Button
-                onClick={generateOptimizedRoute}
-                disabled={loading}
-              >
-                <Navigation className="h-4 w-4 mr-2" />
-                Generar Ruta
-              </Button>
-              
-              <Button
-                onClick={handleGenerateAutomaticRoutes}
-                disabled={loading}
-                variant="primary"
-              >
-                <Route className="h-4 w-4 mr-2" />
-                Generar Rutas Automáticas
-              </Button>
-              
-            </>
-          )}
         </div>
       </div>
 
@@ -826,11 +805,15 @@ const Routes = () => {
               {isAdmin && (
                 <>
                   <p className="text-gray-600 mb-4">
-                    Genera una ruta optimizada para organizar los recojos del día
+                    Genera rutas automáticas optimizadas para organizar los recojos del día
                   </p>
-                  <Button onClick={generateOptimizedRoute} disabled={loading}>
-                    <Navigation className="h-4 w-4 mr-2" />
-                    Generar Primera Ruta
+                  <Button 
+                    onClick={handleGenerateAutomaticRoutes} 
+                    disabled={loading}
+                    variant="primary"
+                  >
+                    <Route className="h-4 w-4 mr-2" />
+                    Generar Rutas Automáticas
                   </Button>
                 </>
               )}

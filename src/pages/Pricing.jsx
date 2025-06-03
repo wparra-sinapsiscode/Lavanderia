@@ -4,16 +4,18 @@ import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
 import { hotelStorage, auditStorage } from '../utils/storage';
 import { formatCurrency } from '../utils';
+import hotelService from '../services/hotel.service';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { DollarSign, Edit, Save, X, Building } from 'lucide-react';
+import { DollarSign, Edit, Save, X, Building, MapPin, Package } from 'lucide-react';
 
 const Pricing = () => {
   const { user, isAdmin } = useAuth();
   const { success, error } = useNotifications();
   const [hotels, setHotels] = useState([]);
   const [editingHotel, setEditingHotel] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
@@ -21,9 +23,27 @@ const Pricing = () => {
     loadHotels();
   }, []);
 
-  const loadHotels = () => {
-    const hotelData = hotelStorage.getHotels();
-    setHotels(hotelData);
+  const loadHotels = async () => {
+    setLoading(true);
+    try {
+      const response = await hotelService.getAllHotels();
+      if (response.success && response.data) {
+        setHotels(response.data);
+      } else {
+        // Fallback a almacenamiento local si la API falla
+        const hotelData = hotelStorage.getHotels();
+        setHotels(hotelData);
+        error('API Error', 'Usando datos locales. ' + (response.message || 'Error al cargar hoteles'));
+      }
+    } catch (err) {
+      console.error('Error loading hotels:', err);
+      // Fallback a almacenamiento local
+      const hotelData = hotelStorage.getHotels();
+      setHotels(hotelData);
+      error('Error de Conexión', 'No se pudo conectar a la API. Mostrando datos locales.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const startEditing = (hotel) => {
@@ -83,16 +103,34 @@ const Pricing = () => {
       <Card key={hotel.id}>
         <Card.Header>
           <div className="flex justify-between items-start">
-            <div>
+            <div className="flex-1">
               <h3 className="text-lg font-semibold text-gray-900">{hotel.name}</h3>
-              <p className="text-sm text-gray-600">{hotel.contactPerson}</p>
-              <p className="text-sm text-gray-500">{hotel.zone}</p>
+              <div className="flex items-center text-sm text-gray-600 mt-1">
+                <MapPin className="h-4 w-4 mr-1" />
+                <span>{hotel.address}</span>
+              </div>
+              <p className="text-sm text-gray-600 mt-1">{hotel.contactPerson}</p>
+              <div className="flex items-center justify-between mt-2">
+                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                  hotel.zone === 'CENTRO' ? 'bg-blue-100 text-blue-800' :
+                  hotel.zone === 'NORTE' ? 'bg-green-100 text-green-800' :
+                  hotel.zone === 'SUR' ? 'bg-purple-100 text-purple-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {hotel.zone}
+                </span>
+                <div className="flex items-center text-sm text-gray-500">
+                  <Package className="h-4 w-4 mr-1" />
+                  <span>Bolsas Disponibles: {hotel.bagInventory || 0}</span>
+                </div>
+              </div>
             </div>
             {isAdmin && !isEditing && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => startEditing(hotel)}
+                className="ml-4"
               >
                 <Edit className="h-4 w-4" />
               </Button>
@@ -200,6 +238,24 @@ const Pricing = () => {
           {hotels.map((hotel) => (
             <PricingCard key={hotel.id} hotel={hotel} />
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Gestión de Precios por Peso
+          </h1>
+          <p className="text-gray-600 text-lg mt-2">
+            Configurar precios por kilogramo específicos para cada hotel
+          </p>
+        </div>
+        <div className="flex justify-center py-10">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
         </div>
       </div>
     );
