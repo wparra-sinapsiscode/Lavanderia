@@ -234,69 +234,80 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
       let apiSuccess = false;
       
       try {
+        // Preparar datos de rótulos para enviar al backend
+        const labelsToCreate = [];
+        
         // Extraer solo los archivos File de las fotos
         const photoFiles = photos.map(photo => photo.file).filter(file => file instanceof File);
         
+        // Crear rótulos con y sin fotos
+        labelCodes.forEach((label, index) => {
+          const labelData = {
+            label: label.code,
+            bagNumber: index + 1,
+            photo: null, // Se actualizará si hay foto correspondiente
+            observations: null
+          };
+          labelsToCreate.push(labelData);
+        });
+        
+        // Si hay fotos, subirlas primero
+        let uploadedPhotoUrls = [];
         if (photoFiles.length > 0) {
-          // Subir fotos usando el mismo endpoint que el formulario de recogida
           const photoResponse = await serviceService.uploadServicePhotos(service.id, photoFiles, 'labeling');
           
-          if (photoResponse.success) {
-            // Actualizar estado del servicio a LABELED
-            const statusResponse = await serviceService.updateServiceStatus(service.id, {
-              status: 'LABELED',
-              internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}`
-            });
-            
-            if (statusResponse.success) {
-              apiSuccess = true;
-              
-              // Guardar información de rótulos en storage local para referencia (SIN IMÁGENES)
-              labelCodes.forEach((label, index) => {
-                const labelData = {
-                  id: `label-${service.id}-${label.id}`,
-                  serviceId: service.id,
-                  hotelId: service.hotel?.id || service.hotelId,
-                  bagNumber: index + 1,
-                  label: label.code,
-                  photo: null, // No guardar imagen cuando se subió al servidor
-                  registeredById: user.id,
-                  timestamp: new Date().toISOString(),
-                  status: 'LABELED',
-                  generatedAt: 'LAVANDERIA'
-                };
-                
-                bagLabelStorage.addBagLabel(labelData);
-              });
-            }
+          if (photoResponse.success && photoResponse.data && photoResponse.data.photoUrls) {
+            uploadedPhotoUrls = photoResponse.data.photoUrls;
           }
-        } else {
-          // Si no hay fotos, solo actualizar estado con los códigos
+        }
+        
+        // Asignar fotos a rótulos (si hay fotos disponibles)
+        uploadedPhotoUrls.forEach((photoUrl, index) => {
+          if (index < labelsToCreate.length) {
+            labelsToCreate[index].photo = photoUrl;
+          }
+        });
+        
+        // Crear rótulos en la base de datos usando el nuevo endpoint
+        const labelsResponse = await bagLabelService.createLabels(service.id, labelsToCreate);
+        
+        if (labelsResponse.success) {
+          // Actualizar estado del servicio a LABELED
           const statusResponse = await serviceService.updateServiceStatus(service.id, {
             status: 'LABELED',
-            internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}`
+            internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}\nFotos: ${uploadedPhotoUrls.length}`
           });
           
           if (statusResponse.success) {
             apiSuccess = true;
             
-            // Guardar información de rótulos en storage local
-            labelCodes.forEach((label, index) => {
-              const labelData = {
-                id: `label-${service.id}-${label.id}`,
+            // Guardar información de rótulos en storage local como respaldo
+            labelsToCreate.forEach((labelData, index) => {
+              const localLabelData = {
+                id: `label-${service.id}-${index + 1}`,
                 serviceId: service.id,
                 hotelId: service.hotel?.id || service.hotelId,
-                bagNumber: index + 1,
-                label: label.code,
-                photo: null,
+                bagNumber: labelData.bagNumber,
+                label: labelData.label,
+                photo: labelData.photo,
                 registeredById: user.id,
                 timestamp: new Date().toISOString(),
                 status: 'LABELED',
                 generatedAt: 'LAVANDERIA'
               };
               
-              bagLabelStorage.addBagLabel(labelData);
+              bagLabelStorage.addBagLabel(localLabelData);
             });
+          }
+        } else {
+          // Si falla la creación de rótulos, al menos actualizar el estado del servicio
+          const statusResponse = await serviceService.updateServiceStatus(service.id, {
+            status: 'LABELED',
+            internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}\nRótulos: ${labelCodes.map(l => l.code).join(', ')} (guardado localmente)`
+          });
+          
+          if (statusResponse.success) {
+            apiSuccess = true;
           }
         }
       } catch (apiError) {

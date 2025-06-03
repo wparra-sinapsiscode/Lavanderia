@@ -92,8 +92,11 @@ const BagLabelRegistry = () => {
         });
         
         if (servicesResponse.success && servicesResponse.data) {
-          // Filter to only include services with labeledDate
-          labeledServices = servicesResponse.data.filter(s => s.labeledDate);
+          // Filter to include services with labeledDate OR status LABELED with labeling photos
+          labeledServices = servicesResponse.data.filter(s => 
+            s.labeledDate || 
+            (s.status === 'LABELED' && s.labelingPhotos && s.labelingPhotos.length > 0)
+          );
           
           // Then get all bag labels
           let labelPromises = [];
@@ -210,7 +213,26 @@ const BagLabelRegistry = () => {
 
   const getServiceLabels = (serviceId) => {
     if (!serviceId || !Array.isArray(bagLabels)) return [];
-    return bagLabels.filter(label => label && label.serviceId === serviceId);
+    const dbLabels = bagLabels.filter(label => label && label.serviceId === serviceId);
+    
+    // Si no hay rótulos en la base de datos, crear rótulos simulados basados en labelingPhotos
+    if (dbLabels.length === 0) {
+      const service = services.find(s => s.id === serviceId);
+      if (service && service.labelingPhotos && service.labelingPhotos.length > 0) {
+        return service.labelingPhotos.map((photo, index) => ({
+          id: `virtual-${serviceId}-${index}`,
+          serviceId: serviceId,
+          label: `${service.hotel?.name || 'ROT'}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${(index + 1).toString().padStart(2, '0')}`,
+          bagNumber: index + 1,
+          photo: photo,
+          timestamp: service.updatedAt || service.createdAt,
+          status: 'LABELED',
+          registeredByName: service.repartidor?.name || 'Sistema'
+        }));
+      }
+    }
+    
+    return dbLabels;
   };
   
   // Function to get labels by service from API (for future use)
@@ -233,7 +255,7 @@ const BagLabelRegistry = () => {
       if (!service) return false;
       
       const term = (searchTerm || '').toLowerCase();
-      const hotelName = (service.hotelName || service.hotel || '').toLowerCase();
+      const hotelName = (service.hotelName || service.hotel?.name || service.hotel || '').toLowerCase();
       const guestName = (service.guestName || '').toLowerCase();
       const serviceId = (service.id || '').toLowerCase();
       
@@ -331,7 +353,7 @@ const BagLabelRegistry = () => {
       export_date: new Date().toISOString(),
       services: getFilteredServices().map(service => ({
         id: service.id,
-        hotel: service.hotelName || service.hotel,
+        hotel: service.hotelName || service.hotel?.name || service.hotel,
         guest: service.guestName,
         room: service.roomNumber,
         bags: service.bagCount,
@@ -496,7 +518,7 @@ const BagLabelRegistry = () => {
                     <div>
                       <h3 className="font-semibold text-gray-900 flex items-center">
                         <Building className="h-4 w-4 mr-2 text-gray-500" />
-                        {service.hotelName || service.hotel || 'Hotel no especificado'}
+                        {service.hotelName || service.hotel?.name || service.hotel || 'Hotel no especificado'}
                       </h3>
                       <p className="text-sm text-gray-600 flex items-center mt-1">
                         <User className="h-4 w-4 mr-2 text-gray-400" />
@@ -533,7 +555,7 @@ const BagLabelRegistry = () => {
                     </div>
                     <div>
                       <p className="text-gray-500">Rotulado</p>
-                      <p className="font-medium">{service.labeledDate ? formatDate(service.labeledDate) : 'N/A'}</p>
+                      <p className="font-medium">{service.labeledDate ? formatDate(service.labeledDate) : formatDate(service.updatedAt)}</p>
                     </div>
                   </div>
 
@@ -634,10 +656,10 @@ const BagLabelRegistry = () => {
             <div className="bg-black bg-opacity-75 text-white p-4 flex justify-between items-center">
               <div>
                 <h3 className="text-lg font-semibold">
-                  Galería de Rótulos - {galleryService.hotelName || galleryService.hotel}
+                  Galería de Rótulos - {galleryService.hotelName || galleryService.hotel?.name || galleryService.hotel}
                 </h3>
                 <p className="text-sm text-gray-300">
-                  {galleryService.guestName} | Servicio: {galleryService.id} | Rotulado: {formatDate(galleryService.labeledDate)}
+                  {galleryService.guestName} | Servicio: {galleryService.id} | Rotulado: {formatDate(galleryService.labeledDate || galleryService.updatedAt)}
                 </p>
               </div>
               <Button
@@ -683,7 +705,7 @@ const BagLabelRegistry = () => {
                     <div className="flex-1 flex items-center justify-center p-8">
                       <div className="relative max-w-4xl max-h-full">
                         <img
-                          src={currentLabel.photo}
+                          src={currentLabel.photo.startsWith('http') ? currentLabel.photo : `http://localhost:3001${currentLabel.photo}`}
                           alt={`Rótulo ${currentLabel.label}`}
                           className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
                         />
@@ -791,7 +813,7 @@ const BagLabelRegistry = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={viewingPhoto}
+              src={viewingPhoto.startsWith('http') ? viewingPhoto : `http://localhost:3001${viewingPhoto}`}
               alt="Foto del rótulo"
               className="max-w-full max-h-full object-contain rounded-lg"
             />
