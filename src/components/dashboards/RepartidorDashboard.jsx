@@ -40,12 +40,13 @@ const RepartidorDashboard = () => {
     setLoading(true);
     try {
       // Try to fetch data from backend API
-      const [repartidorMetrics, todayRoutesData] = await Promise.all([
+      const [repartidorMetrics, todayRoutesResponse] = await Promise.all([
         dashboardService.getRepartidorStats(timePeriod, user.id),
         routeService.getAllRoutes({ date: new Date().toISOString().split('T')[0], repartidorId: user.id })
       ]);
       
-      // Process routes data
+      // Process routes data - handle response format
+      const todayRoutesData = todayRoutesResponse.data || todayRoutesResponse || [];
       const activeRoutes = todayRoutesData.filter(r => r.status === 'en_progreso').length;
       const completedRoutes = todayRoutesData.filter(r => r.status === 'completada').length;
       setTodayRoutes(todayRoutesData);

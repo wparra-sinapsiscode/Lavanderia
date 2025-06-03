@@ -7,6 +7,7 @@ export const USER_ROLES = {
 // Service status - Workflow actualizado
 export const SERVICE_STATUS = {
   PENDING_PICKUP: 'pendiente_recojo',
+  ASSIGNED_TO_ROUTE: 'asignado_ruta', // ✨ NUEVO: Repartidor en camino
   PICKED_UP: 'recogido',
   LABELED: 'rotulado',
   IN_PROCESS: 'en_proceso',

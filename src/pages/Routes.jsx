@@ -205,6 +205,9 @@ const Routes = () => {
       // Start route using API
       const updatedRoute = await routeService.startRoute(routeId);
       
+      // ✨ NUEVO: Actualizar estado de servicios a ASSIGNED_TO_ROUTE
+      await updateRouteServicesStatus(routeId);
+      
       // Update local state
       setRoutes(prevRoutes => {
         const newRoutes = prevRoutes.map(route => {
@@ -234,7 +237,7 @@ const Routes = () => {
         return routes.find(r => r.id === routeId);
       });
       
-      success('Ruta Iniciada', 'La ruta ha sido iniciada correctamente');
+      success('Ruta Iniciada', 'La ruta ha sido iniciada y los servicios han sido actualizados');
     } catch (err) {
       console.error('Error starting route:', err);
       error('Error', `No se pudo iniciar la ruta: ${err.message || 'Error desconocido'}`);
@@ -242,6 +245,62 @@ const Routes = () => {
       // No fallback, just report the error and don't change state
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✨ NUEVA FUNCIÓN: Actualizar estado de servicios cuando se inicia ruta
+  const updateRouteServicesStatus = async (routeId) => {
+    try {
+      // Obtener la ruta con sus servicios
+      const route = routes.find(r => r.id === routeId);
+      if (!route || !route.hotels) return;
+      
+      // Extraer todos los servicios de la ruta
+      const serviceIds = [];
+      route.hotels.forEach(hotel => {
+        if (hotel.services) {
+          hotel.services.forEach(service => {
+            if (service.id && service.status === 'PENDING_PICKUP') {
+              serviceIds.push(service.id);
+            }
+          });
+        }
+        // También revisar en pickups y deliveries por compatibilidad
+        if (hotel.pickups) {
+          hotel.pickups.forEach(service => {
+            if (service.id && service.status === 'PENDING_PICKUP') {
+              serviceIds.push(service.id);
+            }
+          });
+        }
+      });
+      
+      console.log(`🚀 Actualizando ${serviceIds.length} servicios a estado ASSIGNED_TO_ROUTE`);
+      
+      // Actualizar cada servicio
+      for (const serviceId of serviceIds) {
+        try {
+          await serviceService.updateServiceStatus(serviceId, {
+            status: 'ASSIGNED_TO_ROUTE',
+            internalNotes: `Ruta iniciada por ${user.name} - ${new Date().toLocaleString()}`
+          });
+        } catch (serviceError) {
+          console.warn(`Error actualizando servicio ${serviceId}:`, serviceError);
+        }
+      }
+      
+      // Notificar actualización para que otros componentes se refresquen
+      window.dispatchEvent(new CustomEvent('serviceUpdated', { 
+        detail: { 
+          type: 'route_started', 
+          routeId,
+          serviceIds 
+        } 
+      }));
+      
+    } catch (error) {
+      console.error('Error actualizando estado de servicios:', error);
+      // No lanzar error para no interrumpir el inicio de ruta
     }
   };
 

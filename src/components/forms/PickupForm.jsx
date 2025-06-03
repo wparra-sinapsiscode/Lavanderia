@@ -388,7 +388,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
               const res = await fetch(signature);
               return res.blob();
             })(),
-            serviceStatus: 'PICKED_UP',
+            serviceStatus: 'PENDING_PICKUP', // Mantener estado hasta confirmación manual
             price
           };
           
@@ -449,7 +449,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           observations: data.observations,
           pickupDate: new Date().toISOString(),
           collectorName: data.collectorName,
-          status: 'PICKED_UP',
+          status: 'PENDING_PICKUP', // Mantener estado hasta confirmación manual
           photos,
           signature,
           geolocation: geoLocation,
@@ -470,10 +470,10 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
         // Add local audit log
         if (updateSuccess) {
           auditStorage.addAuditEntry({
-            action: 'PICKUP_COMPLETED',
+            action: 'PICKUP_DATA_REGISTERED',
             user: user.name,
             timestamp: new Date().toISOString(),
-            details: `Recojo completado para ${service.guestName} - ${typeof hotel === 'object' ? hotel.name : hotel}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}`,
+            details: `Datos de recogida registrados para ${service.guestName} - ${typeof hotel === 'object' ? hotel.name : hotel}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}. Pendiente de confirmación.`,
             syncPending: true
           });
           console.log('Recojo guardado exitosamente en almacenamiento local');
@@ -483,7 +483,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
       if (updateSuccess) {
         showNotification({
           type: 'success',
-          message: `Servicio de ${service.guestName} recogido exitosamente. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}${usedLocalStorage ? ' (guardado localmente)' : ''}`
+          message: `Datos de recogida registrados para ${service.guestName}. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}. RECUERDE: Debe confirmar la recogida desde la lista de servicios${usedLocalStorage ? ' (guardado localmente)' : ''}`
         });
 
         // Show redirect to labels option

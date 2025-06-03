@@ -43,6 +43,7 @@ export const calculateServicePrice = (weight, pricePerKg) => {
 export const getStatusColor = (status) => {
   const colors = {
     pendiente_recojo: 'bg-red-100 text-red-800',
+    asignado_ruta: 'bg-blue-100 text-blue-800', // ✨ NUEVO
     recogido: 'bg-yellow-100 text-yellow-800',
     rotulado: 'bg-indigo-100 text-indigo-800',
     en_proceso: 'bg-blue-100 text-blue-800',
@@ -62,6 +63,7 @@ export const getStatusColor = (status) => {
 export const getStatusText = (status) => {
   const texts = {
     pendiente_recojo: 'Pendiente Recojo',
+    asignado_ruta: 'Repartidor en Camino', // ✨ NUEVO
     recogido: 'Recogido',
     rotulado: 'Rotulado',
     en_proceso: 'En Proceso',

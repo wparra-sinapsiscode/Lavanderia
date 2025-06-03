@@ -120,13 +120,29 @@ const Pickup = () => {
         const servicesResponse = await serviceService.getAllServices();
         if (servicesResponse.success && servicesResponse.data) {
           services = servicesResponse.data;
+          console.log('🔍 DEBUG - Servicios cargados por admin:', services.length);
+          services.forEach((service, index) => {
+            console.log(`🔍 Servicio ${index + 1}:`, {
+              id: service.id,
+              guestName: service.guestName,
+              status: service.status,
+              hasWeight: !!service.weight,
+              hasPhotos: !!service.photos && service.photos.length > 0,
+              hasSignature: !!service.signature
+            });
+          });
         } else {
           throw new Error('No se pudieron obtener los servicios del administrador');
         }
       } else if (isRepartidor) {
-        // Para repartidores, usamos directamente el modo offline por los problemas del backend
-        // Esta decisión se toma para evitar el error 500 cuando se intenta acceder a /services/my-services
-        throw new Error('Usando modo offline para repartidores');
+        // Repartidor usa su endpoint específico
+        const servicesResponse = await serviceService.getMyServices();
+        if (servicesResponse.success && servicesResponse.data) {
+          services = servicesResponse.data;
+          console.log(`Repartidor: ${services.length} servicios cargados desde API`);
+        } else {
+          throw new Error('No se pudieron obtener los servicios del repartidor desde API');
+        }
       }
       
       // Cargar repartidores para reasignación desde la API (solo si llegamos hasta aquí)
@@ -161,7 +177,7 @@ const Pickup = () => {
         
         // Añadir servicios pendientes de la zona que no estén asignados
         myZoneServices.forEach(zoneService => {
-          if (!zoneService.repartidorId && zoneService.status === SERVICE_STATUS.PENDING_PICKUP) {
+          if (!zoneService.repartidorId && zoneService.status === 'PENDING_PICKUP') {
             // Solo añadir si no existe ya en la lista
             if (!services.some(s => s.id === zoneService.id)) {
               services.push(zoneService);
@@ -223,7 +239,7 @@ const Pickup = () => {
     // A partir de aquí, procesamos los datos sin importar de dónde vengan (API o local)
     
     // Filtrar servicios cancelados
-    pending = services.filter(s => s.status !== SERVICE_STATUS.CANCELLED);
+    pending = services.filter(s => s.status !== 'CANCELLED');
     
     // Ordenar servicios por fecha de creación (más reciente primero)
     const sortedServices = pending.sort((a, b) => 
@@ -233,14 +249,14 @@ const Pickup = () => {
     setPendingServices(sortedServices);
     
     // Calcular estadísticas
-    const pendingPickups = pending.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length;
+    const pendingPickups = pending.filter(s => s.status === 'PENDING_PICKUP' || s.status === 'ASSIGNED_TO_ROUTE').length;
     
     // Total de servicios - lógica diferente para admin vs repartidor
     const myPickups = isAdmin 
       ? pending.length 
       : pending.filter(s => 
           s.repartidorId === user.id && 
-          (s.status === SERVICE_STATUS.PENDING_PICKUP || s.status === SERVICE_STATUS.PICKED_UP)
+          (s.status === 'PENDING_PICKUP' || s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PICKED_UP')
         ).length;
     
     // Servicios de hoy (usando fecha del servidor o local)
@@ -312,6 +328,63 @@ const Pickup = () => {
       type: 'success',
       message: 'Datos actualizados correctamente'
     });
+  };
+
+  // Confirmar recogida de un servicio que ya tiene datos pero está pendiente
+  const handleConfirmPickup = async (service) => {
+    try {
+      console.log('Confirmando recogida para servicio:', service.id);
+      
+      const updateData = {
+        status: 'PICKED_UP',
+        pickupDate: new Date().toISOString(),
+        internalNotes: (service.internalNotes || '') + 
+          `\n[${new Date().toLocaleString()}] Recogida confirmada por ${user.name}`
+      };
+      
+      // Intentar actualizar en la API
+      try {
+        const apiResponse = await serviceService.updateServiceStatus(service.id, updateData);
+        
+        if (apiResponse && apiResponse.success) {
+          console.log('Recogida confirmada en la API');
+        } else {
+          throw new Error('Error al confirmar en API');
+        }
+      } catch (apiError) {
+        console.warn('Error al confirmar en API, actualizando localmente:', apiError);
+        
+        // Actualizar en almacenamiento local
+        const localSuccess = serviceStorage.updateService(service.id, updateData);
+        
+        if (!localSuccess) {
+          throw new Error('Error al actualizar servicio en almacenamiento local');
+        }
+      }
+      
+      showNotification({
+        type: 'success',
+        message: `Recogida confirmada para ${service.guestName}`
+      });
+      
+      // Recargar datos
+      loadPickupData();
+      
+      // Notificar a otros componentes
+      window.dispatchEvent(new CustomEvent('serviceUpdated', { 
+        detail: { 
+          type: 'pickup_confirmed', 
+          serviceId: service.id 
+        } 
+      }));
+      
+    } catch (error) {
+      console.error('Error al confirmar recogida:', error);
+      showNotification({
+        type: 'error',
+        message: `Error al confirmar recogida: ${error.message}`
+      });
+    }
   };
 
   // Ya no necesitamos reasignar servicios, ahora se asignan a la zona
@@ -583,8 +656,15 @@ const Pickup = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(service.status)}`}>
-                            {getStatusText(service.status)}
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            service.status === 'PENDING_PICKUP' && service.weight && service.photos && service.signature
+                              ? 'bg-yellow-100 text-yellow-800' 
+                              : getStatusColor(service.status)
+                          }`}>
+                            {service.status === 'PENDING_PICKUP' && service.weight && service.photos && service.signature
+                              ? 'Listo para confirmar'
+                              : getStatusText(service.status)
+                            }
                           </span>
                           {isAdmin && (
                             <Button
@@ -612,19 +692,44 @@ const Pickup = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {service.status === SERVICE_STATUS.PENDING_PICKUP ? (
-                          isRepartidor ? (
-                            <Button
-                              size="sm"
-                              onClick={() => setSelectedService(service)}
-                            >
-                              <Truck className="h-4 w-4 mr-1" />
-                              Recoger
-                            </Button>
+                        {service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE' ? (
+                          // Servicios en estado PENDING_PICKUP
+                          service.weight && service.photos && service.signature ? (
+                            // Tiene datos pero no confirmado
+                            isRepartidor ? (
+                              <Button
+                                size="sm"
+                                className="bg-yellow-600 hover:bg-yellow-700"
+                                onClick={() => handleConfirmPickup(service)}
+                              >
+                                <UserCheck className="h-4 w-4 mr-1" />
+                                Confirmar Recogida
+                              </Button>
+                            ) : (
+                              <div className="flex items-center text-yellow-600">
+                                <Clock className="h-4 w-4 mr-1" />
+                                <span>Listo para confirmar</span>
+                              </div>
+                            )
                           ) : (
-                            <span className="text-gray-400 italic">Solo repartidor</span>
+                            // Sin datos de recogida
+                            isRepartidor ? (
+                              <Button
+                                size="sm"
+                                onClick={() => setSelectedService(service)}
+                              >
+                                <Truck className="h-4 w-4 mr-1" />
+                                Recoger
+                              </Button>
+                            ) : (
+                              <div className="flex items-center text-red-600">
+                                <Clock className="h-4 w-4 mr-1" />
+                                <span>Pendiente</span>
+                              </div>
+                            )
                           )
                         ) : (
+                          // Servicios ya recogidos (PICKED_UP u otros estados)
                           <div className="flex items-center text-green-600">
                             <Package className="h-4 w-4 mr-1" />
                             <span>Recogido</span>

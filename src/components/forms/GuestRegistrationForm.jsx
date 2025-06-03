@@ -224,7 +224,18 @@ const GuestRegistrationForm = ({ onClose, onServiceCreated }) => {
 
       // Crear servicio mediante API
       const guestResponse = await guestService.registerGuestWithService(serviceData);
-      console.log('Respuesta completa de registro de servicio:', guestResponse);
+      console.log('🆕 DEBUG - Respuesta completa de registro de servicio:', guestResponse);
+      
+      if (guestResponse.success && guestResponse.data && guestResponse.data.service) {
+        console.log('🆕 DEBUG - Nuevo servicio creado:', {
+          id: guestResponse.data.service.id,
+          guestName: guestResponse.data.service.guestName,
+          status: guestResponse.data.service.status,
+          hasWeight: !!guestResponse.data.service.weight,
+          hasPhotos: !!guestResponse.data.service.photos,
+          hasSignature: !!guestResponse.data.service.signature
+        });
+      }
       
       if (!guestResponse.success) {
         const errorMsg = guestResponse.message || 

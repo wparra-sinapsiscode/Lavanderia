@@ -21,16 +21,23 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     {
       status: SERVICE_STATUS.PENDING_PICKUP,
       title: 'Pendiente de Recojo',
-      description: 'Servicio registrado, esperando recojo',
+      description: 'Servicio registrado, esperando asignación',
       icon: Clock,
-      color: 'yellow'
+      color: 'red'
+    },
+    {
+      status: SERVICE_STATUS.ASSIGNED_TO_ROUTE,
+      title: 'Repartidor en Camino',
+      description: 'Ruta iniciada, repartidor dirigiéndose al hotel',
+      icon: Truck,
+      color: 'blue'
     },
     {
       status: SERVICE_STATUS.PICKED_UP,
       title: 'Recogido',
-      description: 'Bolsas recogidas del hotel',
+      description: 'Bolsas recogidas físicamente del hotel',
       icon: Package,
-      color: 'blue'
+      color: 'yellow'
     },
     {
       status: SERVICE_STATUS.LABELED,
@@ -280,8 +287,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const requirementMessage = getStatusRequirementMessage(step.status);
     
     return (
-      <div className="flex items-center">
-        <div className="flex flex-col items-center relative">
+      <div className="flex flex-col items-center relative flex-1">
+        <div className="flex flex-col items-center">
           <div
             className={`
               w-12 h-12 rounded-full flex items-center justify-center border-2 cursor-pointer transition-all relative
@@ -302,23 +309,25 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
               </div>
             )}
           </div>
-          <div className="mt-2 text-center min-w-[120px]">
-            <p className={`text-sm font-medium ${isSelected ? 'text-gray-900' : 'text-gray-600'}`}>
+          <div className="mt-3 text-center max-w-[120px]">
+            <p className={`text-sm font-medium ${isSelected ? 'text-gray-900' : 'text-gray-600'} leading-tight`}>
               {step.title}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 leading-tight">
               {step.description}
             </p>
             {requiresValidation && !isCompleted && !isActive && (
               <p className="text-xs text-red-500 mt-1 font-medium">
-                Requisitos faltantes
+                Faltan requisitos
               </p>
             )}
           </div>
         </div>
         
         {index < workflowSteps.length - 1 && (
-          <ArrowRight className="h-6 w-6 text-gray-300 mx-4 mt-[-24px]" />
+          <div className="absolute top-6 left-full w-full flex justify-center pointer-events-none">
+            <ArrowRight className="h-5 w-5 text-gray-300" />
+          </div>
         )}
       </div>
     );
@@ -326,7 +335,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-7xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           {/* Header */}
           <div className="flex justify-between items-start mb-6">
@@ -377,8 +386,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             <h4 className="text-lg font-medium text-gray-900 mb-4">
               Flujo de Trabajo
             </h4>
-            <div className="flex items-start justify-center overflow-x-auto pb-4">
-              <div className="flex items-center space-x-0 min-w-max">
+            <div className="overflow-x-auto pb-4">
+              <div className="flex items-center justify-between min-w-max px-4" style={{ minWidth: '800px' }}>
                 {workflowSteps.map((step, index) => {
                   const currentIndex = getCurrentStepIndex();
                   const selectedIndex = getSelectedStepIndex();
