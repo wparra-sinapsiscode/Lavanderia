@@ -58,7 +58,7 @@ const Routes = () => {
       
       // Load services and hotels from API
       const [servicesResponse, hotelsResponse, routesResponse] = await Promise.all([
-        serviceService.getAllServices(),
+        isAdmin ? serviceService.getAllServices() : serviceService.getMyServices(),
         hotelService.getAllHotels(),
         routeService.getAllRoutes({ date: selectedDate, repartidorId: isAdmin ? undefined : user?.id })
       ]);
@@ -78,11 +78,50 @@ const Routes = () => {
         return route;
       }) : [];
       
-      setRoutes(routesWithNumbers);
+      // Filter out duplicates by ID
+      const uniqueRoutes = routesWithNumbers.filter((route, index, array) => 
+        array.findIndex(r => r.id === route.id) === index
+      );
       
-      // Set active route if exists
-      const active = routesWithNumbers.find(r => r.status === 'en_progreso');
-      setActiveRoute(active);
+      // Process routes to ensure hotel data is properly grouped
+      const processedRoutes = uniqueRoutes.map(route => {
+        // Debug log
+        console.log(`Route ${route.id} has ${route.hotels?.length} hotels:`, route.hotels);
+        
+        // Group hotels by hotelId to avoid duplicates
+        if (route.hotels && route.hotels.length > 0) {
+          const hotelMap = new Map();
+          
+          route.hotels.forEach(hotel => {
+            const hotelId = hotel.hotelId;
+            if (!hotelMap.has(hotelId)) {
+              hotelMap.set(hotelId, {
+                ...hotel,
+                pickups: [...(hotel.pickups || [])],
+                deliveries: [...(hotel.deliveries || [])],
+                services: [...(hotel.services || [])]
+              });
+            } else {
+              // Merge services if hotel is duplicated
+              const existing = hotelMap.get(hotelId);
+              existing.pickups = [...existing.pickups, ...(hotel.pickups || [])];
+              existing.deliveries = [...existing.deliveries, ...(hotel.deliveries || [])];
+              existing.services = [...existing.services, ...(hotel.services || [])];
+            }
+          });
+          
+          // Replace hotels array with deduplicated version
+          route.hotels = Array.from(hotelMap.values());
+        }
+        
+        return route;
+      });
+      
+      setRoutes(processedRoutes);
+      
+      // Set active route if exists (prefer in_progress over en_progreso)
+      const active = processedRoutes.find(r => r.status === 'en_progreso' || r.status === 'IN_PROGRESS');
+      setActiveRoute(active || null);
     } catch (err) {
       console.error('Error loading routes data:', err);
       error('Error', 'No se pudo cargar los datos de rutas: ' + (err.message || 'Error desconocido'));
@@ -205,103 +244,113 @@ const Routes = () => {
       // Start route using API
       const updatedRoute = await routeService.startRoute(routeId);
       
-      // ✨ NUEVO: Actualizar estado de servicios a ASSIGNED_TO_ROUTE
-      await updateRouteServicesStatus(routeId);
+      // Process the updated route to ensure proper data structure
+      const processedUpdatedRoute = {
+        ...updatedRoute,
+        status: 'en_progreso',
+        startTime: updatedRoute.startTime || new Date().toISOString()
+      };
       
-      // Update local state
+      // Update local state immediately to prevent duplicate calls
       setRoutes(prevRoutes => {
-        const newRoutes = prevRoutes.map(route => {
+        return prevRoutes.map(route => {
           if (route.id === routeId) {
-            return {
-              ...route,
-              ...updatedRoute,
-              status: 'en_progreso',
-              startTime: updatedRoute.startTime || new Date().toISOString()
-            };
+            return processedUpdatedRoute;
           }
           return route;
         });
-        return newRoutes;
       });
       
-      // Set as active route
-      setActiveRoute(prevActiveRoute => {
-        if (prevActiveRoute?.id === routeId) {
-          return {
-            ...prevActiveRoute,
-            ...updatedRoute,
-            status: 'en_progreso',
-            startTime: updatedRoute.startTime || new Date().toISOString()
-          };
-        }
-        return routes.find(r => r.id === routeId);
-      });
+      // Set as active route with proper structure
+      setActiveRoute(processedUpdatedRoute);
       
-      success('Ruta Iniciada', 'La ruta ha sido iniciada y los servicios han sido actualizados');
+      // ✨ NUEVO: Actualizar estado de servicios a ASSIGNED_TO_ROUTE (en segundo plano)
+      updateRouteServicesStatus(routeId, updatedRoute);
+      
+      success('Ruta Iniciada', 'La ruta ha sido iniciada exitosamente');
     } catch (err) {
       console.error('Error starting route:', err);
       error('Error', `No se pudo iniciar la ruta: ${err.message || 'Error desconocido'}`);
-      
-      // No fallback, just report the error and don't change state
     } finally {
       setLoading(false);
     }
   };
 
   // ✨ NUEVA FUNCIÓN: Actualizar estado de servicios cuando se inicia ruta
-  const updateRouteServicesStatus = async (routeId) => {
-    try {
-      // Obtener la ruta con sus servicios
-      const route = routes.find(r => r.id === routeId);
-      if (!route || !route.hotels) return;
-      
-      // Extraer todos los servicios de la ruta
-      const serviceIds = [];
-      route.hotels.forEach(hotel => {
-        if (hotel.services) {
-          hotel.services.forEach(service => {
-            if (service.id && service.status === 'PENDING_PICKUP') {
-              serviceIds.push(service.id);
-            }
-          });
+  const updateRouteServicesStatus = async (routeId, routeData) => {
+    // Ejecutar en segundo plano para no bloquear la UI
+    setTimeout(async () => {
+      try {
+        // Usar los datos de la ruta proporcionada o buscarla en el estado actual
+        const route = routeData || routes.find(r => r.id === routeId);
+        if (!route || !route.hotels) {
+          console.warn('No se encontró información de la ruta para actualizar servicios');
+          return;
         }
-        // También revisar en pickups y deliveries por compatibilidad
-        if (hotel.pickups) {
-          hotel.pickups.forEach(service => {
-            if (service.id && service.status === 'PENDING_PICKUP') {
-              serviceIds.push(service.id);
-            }
-          });
-        }
-      });
-      
-      console.log(`🚀 Actualizando ${serviceIds.length} servicios a estado ASSIGNED_TO_ROUTE`);
-      
-      // Actualizar cada servicio
-      for (const serviceId of serviceIds) {
-        try {
-          await serviceService.updateServiceStatus(serviceId, {
-            status: 'ASSIGNED_TO_ROUTE',
-            internalNotes: `Ruta iniciada por ${user.name} - ${new Date().toLocaleString()}`
-          });
-        } catch (serviceError) {
-          console.warn(`Error actualizando servicio ${serviceId}:`, serviceError);
-        }
+        
+        // Extraer todos los servicios de la ruta
+        const serviceIds = new Set(); // Usar Set para evitar duplicados
+        
+        route.hotels.forEach(hotel => {
+          // Revisar en services
+          if (hotel.services && Array.isArray(hotel.services)) {
+            hotel.services.forEach(service => {
+              if (service.id && service.status === 'PENDING_PICKUP') {
+                serviceIds.add(service.id);
+              }
+            });
+          }
+          
+          // También revisar en pickups por compatibilidad
+          if (hotel.pickups && Array.isArray(hotel.pickups)) {
+            hotel.pickups.forEach(service => {
+              if (service.id && service.status === 'PENDING_PICKUP') {
+                serviceIds.add(service.id);
+              }
+            });
+          }
+        });
+        
+        const uniqueServiceIds = Array.from(serviceIds);
+        console.log(`🚀 Actualizando ${uniqueServiceIds.length} servicios a estado ASSIGNED_TO_ROUTE`);
+        
+        // Actualizar servicios con menor agresividad para evitar errores 500
+        const updatePromises = uniqueServiceIds.map(async (serviceId) => {
+          try {
+            const result = await serviceService.updateServiceStatus(serviceId, {
+              status: 'ASSIGNED_TO_ROUTE',
+              internalNotes: `Ruta iniciada por ${user.name} - ${new Date().toLocaleString()}`
+            });
+            console.log(`✅ Servicio ${serviceId} actualizado correctamente`);
+            return result;
+          } catch (serviceError) {
+            console.warn(`⚠️ Error actualizando servicio ${serviceId}:`, serviceError.message);
+            // No fallar todo el proceso por un servicio
+            return null;
+          }
+        });
+        
+        // Esperar a que todas las actualizaciones terminen
+        const results = await Promise.allSettled(updatePromises);
+        const successful = results.filter(r => r.status === 'fulfilled' && r.value !== null).length;
+        
+        console.log(`✅ ${successful}/${uniqueServiceIds.length} servicios actualizados exitosamente`);
+        
+        // Notificar actualización para que otros componentes se refresquen
+        window.dispatchEvent(new CustomEvent('serviceUpdated', { 
+          detail: { 
+            type: 'route_started', 
+            routeId,
+            serviceIds: uniqueServiceIds,
+            successful
+          } 
+        }));
+        
+      } catch (error) {
+        console.error('Error actualizando estado de servicios:', error);
+        // No interrumpir el flujo principal
       }
-      
-      // Notificar actualización para que otros componentes se refresquen
-      window.dispatchEvent(new CustomEvent('serviceUpdated', { 
-        detail: { 
-          type: 'route_started', 
-          routeId,
-          serviceIds 
-        } 
-      }));
-      
-    } catch (error) {
-      console.error('Error actualizando estado de servicios:', error);
-      // No lanzar error para no interrumpir el inicio de ruta
-    }
+    }, 1000); // Esperar 1 segundo para que la ruta se complete primero
   };
 
   const handleGenerateAutomaticRoutes = async () => {
@@ -794,9 +843,11 @@ const Routes = () => {
           </Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {routes.map(route => (
-              <RouteCard key={route.id} route={route} />
-            ))}
+            {routes
+              .filter(route => !activeRoute || route.id !== activeRoute.id) // Filtrar la ruta activa
+              .map(route => (
+                <RouteCard key={route.id} route={route} />
+              ))}
           </div>
         )}
       </div>
