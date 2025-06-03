@@ -60,17 +60,23 @@ const Pricing = () => {
 
   const onSubmit = async (data) => {
     try {
-      const updateResult = hotelStorage.updateHotel(editingHotel.id, {
+      // Primero actualizar en la base de datos a través de la API
+      const response = await hotelService.updateHotel(editingHotel.id, {
         pricePerKg: parseFloat(data.pricePerKg)
       });
 
-      if (updateResult) {
+      if (response.success) {
         // Update local state
         setHotels(prev => prev.map(h => 
           h.id === editingHotel.id 
             ? { ...h, pricePerKg: parseFloat(data.pricePerKg) }
             : h
         ));
+
+        // También actualizar en almacenamiento local como respaldo
+        hotelStorage.updateHotel(editingHotel.id, {
+          pricePerKg: parseFloat(data.pricePerKg)
+        });
 
         // Add audit log
         auditStorage.addAuditEntry({
@@ -88,7 +94,7 @@ const Pricing = () => {
         reset();
         loadHotels();
       } else {
-        error('Error', 'No se pudo actualizar el precio');
+        error('Error', response.message || 'No se pudo actualizar el precio');
       }
     } catch (err) {
       console.error('Error updating pricing:', err);
