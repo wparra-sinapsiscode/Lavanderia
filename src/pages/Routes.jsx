@@ -728,23 +728,38 @@ const Routes = () => {
                 const routeStatus = getRouteStatus(route);
                 
                 if (routeStatus.status === 'completada') {
-                  return (
-                    <Button
-                      onClick={() => navigate('/bag-labels', { 
-                        state: { 
-                          fromRoute: true,
-                          routeId: route.id,
-                          services: route.hotels.flatMap(h => h.services || []).filter(s => 
-                            ['PICKED_UP'].includes(s.status)
-                          )
-                        }
-                      })}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      <Package className="h-4 w-4 mr-2" />
-                      Siguiente: Rotular →
-                    </Button>
-                  );
+                  // Para administradores, mostrar opción de rotular
+                  if (isAdmin || user.role === USER_ROLES.ADMIN) {
+                    return (
+                      <Button
+                        onClick={() => navigate('/bag-labels', { 
+                          state: { 
+                            fromRoute: true,
+                            routeId: route.id,
+                            services: route.hotels.flatMap(h => h.services || []).filter(s => 
+                              ['PICKED_UP'].includes(s.status)
+                            )
+                          }
+                        })}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        <Package className="h-4 w-4 mr-2" />
+                        Siguiente: Rotular →
+                      </Button>
+                    );
+                  } else {
+                    // Para repartidores, mostrar ruta completada
+                    return (
+                      <Button
+                        variant="outline"
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                        disabled
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Completado ✓
+                      </Button>
+                    );
+                  }
                 } else if (route.status === 'pendiente' && !isAdmin && route.repartidorId === user.id) {
                   return (
                     <Button
@@ -1156,30 +1171,51 @@ const Routes = () => {
                         {/* Individual Services */}
                         <div className="mt-3 border-t pt-3 space-y-3">
                           {hotel.services && hotel.services.length > 0 ? (
-                            hotel.services.map((service, serviceIndex) => {
-                              const isPickup = service.status === SERVICE_STATUS.PENDING_PICKUP;
-                              const isDelivery = service.status === SERVICE_STATUS.PARTIAL_DELIVERY || 
-                                               service.status === SERVICE_STATUS.COMPLETED ||
-                                               service.status === SERVICE_STATUS.READY_FOR_DELIVERY;
-                              const isCompleted = service.status === SERVICE_STATUS.PICKED_UP || 
-                                                 service.status === SERVICE_STATUS.DELIVERED;
-                              
-                              return (
-                                <div 
-                                  key={service.id} 
-                                  className={`p-3 rounded border ${
-                                    isCompleted ? 'bg-gray-50 border-gray-300' :
-                                    isPickup ? 'bg-blue-50 border-blue-200' : 
-                                    'bg-green-50 border-green-200'
-                                  }`}
-                                >
+                            hotel.services
+                              .filter(service => {
+                                // Para repartidores, solo mostrar servicios de recojo (no entregas)
+                                if (!isAdmin && user.role !== USER_ROLES.ADMIN) {
+                                  return service.status === SERVICE_STATUS.PENDING_PICKUP || 
+                                         service.status === SERVICE_STATUS.ASSIGNED_TO_ROUTE ||
+                                         service.status === SERVICE_STATUS.PICKED_UP;
+                                }
+                                // Para admin, mostrar todo
+                                return true;
+                              })
+                              .map((service, serviceIndex) => {
+                                const isPickup = service.status === SERVICE_STATUS.PENDING_PICKUP || 
+                                                service.status === SERVICE_STATUS.ASSIGNED_TO_ROUTE;
+                                const isDelivery = service.status === SERVICE_STATUS.PARTIAL_DELIVERY || 
+                                                 service.status === SERVICE_STATUS.COMPLETED ||
+                                                 service.status === SERVICE_STATUS.READY_FOR_DELIVERY;
+                                const isCompleted = service.status === SERVICE_STATUS.PICKED_UP || 
+                                                   service.status === SERVICE_STATUS.DELIVERED;
+                                
+                                // Determinar color según prioridad
+                                const getPriorityClasses = () => {
+                                  if (isCompleted) return 'bg-gray-50 border-gray-300';
+                                  
+                                  if (service.priority === 'alta' || service.priority === 'ALTA') {
+                                    return 'bg-red-50 border-red-300';
+                                  } else if (service.priority === 'media' || service.priority === 'MEDIA') {
+                                    return 'bg-yellow-50 border-yellow-300';
+                                  } else {
+                                    return 'bg-green-50 border-green-300';
+                                  }
+                                };
+                                
+                                return (
+                                  <div 
+                                    key={service.id} 
+                                    className={`p-3 rounded border ${getPriorityClasses()}`}
+                                  >
                                   <div className="flex justify-between items-start mb-2">
                                     <div className="flex-1">
                                       <h6 className="font-medium text-sm">
                                         {service.guestName} - Hab. {service.roomNumber}
                                       </h6>
                                       <p className="text-xs text-gray-600">
-                                        {service.bagCount} bolsas • {service.weight}kg
+                                        {service.bagCount} bolsas • {service.weight || 'Por pesar'}kg
                                       </p>
                                       {service.deliveredBagCount && service.deliveredBagCount > 0 && (
                                         <p className="text-xs text-orange-600">
@@ -1193,7 +1229,7 @@ const Routes = () => {
                                         isPickup ? 'bg-blue-100 text-blue-800' : 
                                         'bg-green-100 text-green-800'
                                       }`}>
-                                        {isCompleted ? 'COMPLETADO' :
+                                        {isCompleted ? 'RECOGIDO' :
                                          isPickup ? 'RECOJO' : 'ENTREGA'}
                                       </span>
                                       <span className={`px-2 py-1 rounded text-xs ${

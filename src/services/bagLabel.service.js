@@ -19,7 +19,7 @@ class BagLabelService {
    */
   async getAllBagLabels(filters = {}) {
     try {
-      const response = await api.get('/bag-labels', { params: filters });
+      const response = await api.get('/labels', { params: filters });
       return response.data;
     } catch (error) {
       console.error('Get bag labels error:', error);
@@ -71,7 +71,7 @@ class BagLabelService {
    */
   async getBagLabelById(id) {
     try {
-      const response = await api.get(`/bag-labels/${id}`);
+      const response = await api.get(`/labels/${id}`);
       return response.data;
     } catch (error) {
       console.error('Get bag label error:', error);
@@ -123,7 +123,7 @@ class BagLabelService {
         }
       });
 
-      const response = await api.post('/bag-labels/single', formData, {
+      const response = await api.post('/labels/single', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -151,7 +151,7 @@ class BagLabelService {
    */
   async createBagLabels(labelData) {
     try {
-      const response = await api.post('/bag-labels', labelData);
+      const response = await api.post('/labels', labelData);
       return response.data;
     } catch (error) {
       console.error('Create bag labels error:', error);
@@ -224,7 +224,7 @@ class BagLabelService {
    */
   async updateBagLabel(id, updateData) {
     try {
-      const response = await api.put(`/bag-labels/${id}`, updateData);
+      const response = await api.put(`/labels/${id}`, updateData);
       return response.data;
     } catch (error) {
       console.error('Update bag label error:', error);
@@ -268,7 +268,7 @@ class BagLabelService {
   async getAvailableBagLabels(hotelId) {
     try {
       const params = hotelId ? { hotelId } : {};
-      const response = await api.get('/bag-labels/available', { params });
+      const response = await api.get('/labels/available', { params });
       return response.data;
     } catch (error) {
       console.error('Get available bag labels error:', error);
@@ -308,7 +308,7 @@ class BagLabelService {
    */
   async getBagLabelsByHotel(hotelId, filters = {}) {
     try {
-      const response = await api.get(`/bag-labels/by-hotel/${hotelId}`, { params: filters });
+      const response = await api.get(`/labels/by-hotel/${hotelId}`, { params: filters });
       return response.data;
     } catch (error) {
       console.error('Get hotel bag labels error:', error);
@@ -355,7 +355,7 @@ class BagLabelService {
       const formData = new FormData();
       formData.append('photo', photo);
       
-      const response = await api.post(`/bag-labels/${labelId}/photo`, formData, {
+      const response = await api.post(`/labels/${labelId}/photo`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }

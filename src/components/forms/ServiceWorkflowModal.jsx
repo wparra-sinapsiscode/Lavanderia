@@ -17,6 +17,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const [selectedBags, setSelectedBags] = useState([]);
   const [bagsToDeliver, setBagsToDeliver] = useState(Math.ceil(service.bagCount / 2));
   const [showRotuladoForm, setShowRotuladoForm] = useState(false);
+  const [existingLabels, setExistingLabels] = useState([]);
 
   // Debug log al abrir el modal (removido para producción)
 
@@ -110,14 +111,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       
       case SERVICE_STATUS.LABELED:
         // To mark as labeled, service must be picked up first
-        return normalizedServiceStatus === SERVICE_STATUS.PICKED_UP;
+        return normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS;
       
       case SERVICE_STATUS.IN_PROCESS:
-        // To mark as in process, service must have labels
-        const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
-        return normalizedServiceStatus === SERVICE_STATUS.LABELED && 
-               serviceLabels.length === service.bagCount &&
-               serviceLabels.every(label => label.label && label.label.trim() !== '');
+        // To mark as in process, service must be picked up (parallel with labeling)
+        return normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED;
       
       default:
         return true;
@@ -130,18 +128,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
         return 'Para marcar como recogido se requiere: peso, fotos, firma y nombre del recolector';
       
       case SERVICE_STATUS.LABELED:
-        return 'Para marcar como rotulado, el servicio debe estar en estado "Recogido"';
+        return 'Para rotular, el servicio debe estar en estado "Recogido"';
       
       case SERVICE_STATUS.IN_PROCESS:
-        const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
-        if (normalizedServiceStatus !== SERVICE_STATUS.LABELED) {
-          return 'Para marcar como "En Proceso", el servicio debe estar rotulado';
-        }
-        if (serviceLabels.length !== service.bagCount) {
-          return `Para marcar como "En Proceso" se requieren ${service.bagCount} rótulos (actualmente: ${serviceLabels.length})`;
-        }
-        if (serviceLabels.some(label => !label.label || label.label.trim() === '')) {
-          return 'Para marcar como "En Proceso" todos los rótulos deben tener contenido';
+        if (normalizedServiceStatus !== SERVICE_STATUS.PICKED_UP && normalizedServiceStatus !== SERVICE_STATUS.LABELED) {
+          return 'Para marcar como "En Proceso", el servicio debe estar recogido';
         }
         return '';
       
@@ -185,6 +176,10 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       }));
       setSelectedBags(bags);
     }
+    
+    // Cargar rótulos existentes si los hay
+    const labels = bagLabelStorage.getBagLabelsByService(service.id);
+    setExistingLabels(labels);
   }, [service]);
 
   // Update percentage when bags selection changes
@@ -310,11 +305,22 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const requiresValidation = !validateStatusRequirements(step.status);
     const requirementMessage = getStatusRequirementMessage(step.status);
     
+    // Check if this is the next available step
+    const isNextAvailable = step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS);
+    
+    // Check if IN_PROCESS should be available (when service is PICKED_UP - parallel with LABELED)
+    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED);
+    
     // Handler para clicks en los estados
     const handleStepClick = () => {
-      // Solo permitir click en ROTULADO si el servicio está RECOGIDO
-      if (step.status === SERVICE_STATUS.LABELED && normalizedServiceStatus === SERVICE_STATUS.PICKED_UP) {
+      // Click en ROTULADO - mostrar formulario o vista de solo lectura (disponible desde PICKED_UP)
+      if (step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) {
         setShowRotuladoForm(true);
+      }
+      // Click en EN PROCESO - cambiar estado si está recogido (paralelo con rotulado)
+      else if (step.status === SERVICE_STATUS.IN_PROCESS && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED)) {
+        setSelectedStatus(SERVICE_STATUS.IN_PROCESS);
+        handleStatusUpdate();
       }
     };
     
@@ -324,11 +330,27 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           <div
             className={`
               w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all relative
-              ${isActive ? `bg-${step.color}-600 border-${step.color}-600 text-white animate-pulse` :
-                isCompleted ? `bg-${step.color}-100 border-${step.color}-500 text-${step.color}-600` :
+              ${isActive ? 'animate-pulse' : ''}
+              ${isActive && step.color === 'red' ? 'bg-red-600 border-red-600 text-white' :
+                isActive && step.color === 'blue' ? 'bg-blue-600 border-blue-600 text-white' :
+                isActive && step.color === 'yellow' ? 'bg-yellow-600 border-yellow-600 text-white' :
+                isActive && step.color === 'indigo' ? 'bg-indigo-600 border-indigo-600 text-white' :
+                isActive && step.color === 'purple' ? 'bg-purple-600 border-purple-600 text-white' :
+                isActive && step.color === 'orange' ? 'bg-orange-600 border-orange-600 text-white' :
+                isActive && step.color === 'green' ? 'bg-green-600 border-green-600 text-white' :
+                isCompleted && step.color === 'red' ? 'bg-red-100 border-red-500 text-red-600' :
+                isCompleted && step.color === 'blue' ? 'bg-blue-100 border-blue-500 text-blue-600' :
+                isCompleted && step.color === 'yellow' ? 'bg-yellow-100 border-yellow-500 text-yellow-600' :
+                isCompleted && step.color === 'indigo' ? 'bg-indigo-100 border-indigo-500 text-indigo-600' :
+                isCompleted && step.color === 'purple' ? 'bg-purple-100 border-purple-500 text-purple-600' :
+                isCompleted && step.color === 'orange' ? 'bg-orange-100 border-orange-500 text-orange-600' :
+                isCompleted && step.color === 'green' ? 'bg-green-100 border-green-500 text-green-600' :
+                isNextAvailable && step.color === 'indigo' ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' :
+                isInProcessAvailable && step.color === 'purple' ? 'bg-purple-500 border-purple-500 text-white hover:bg-purple-600' :
                 'bg-gray-100 border-gray-300 text-gray-400'}
-              ${isActive || isCompleted ? '' : 'opacity-50'}
-              ${step.status === SERVICE_STATUS.LABELED && normalizedServiceStatus === SERVICE_STATUS.PICKED_UP ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
+              ${isActive || isCompleted || isNextAvailable || isInProcessAvailable ? '' : 'opacity-50'}
+              ${(step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) ||
+                (step.status === SERVICE_STATUS.IN_PROCESS && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED)) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
             onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
@@ -626,6 +648,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       {showRotuladoForm && (
         <RotuladoForm
           service={service}
+          viewMode={normalizedServiceStatus === SERVICE_STATUS.LABELED && existingLabels.length === service.bagCount}
+          existingLabels={existingLabels}
           onClose={() => {
             setShowRotuladoForm(false);
             setSelectedStatus(service.status); // Reset selected status

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
 import { bagLabelStorage, serviceStorage } from '../../utils/storage';
-import bagLabelService from '../../services/bagLabel.service';
 import serviceService from '../../services/service.service';
 import { SERVICE_STATUS } from '../../types';
 import { formatDate } from '../../utils';
@@ -10,7 +9,7 @@ import Button from '../ui/Button';
 import Card from '../ui/Card';
 import { Camera, Tag, Package, CheckCircle, X, Upload, User, MapPin, Calendar, Weight } from 'lucide-react';
 
-const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
+const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, existingLabels = [] }) => {
   const { user } = useAuth();
   const { showNotification } = useNotifications();
   const [bagLabels, setBagLabels] = useState([]);
@@ -18,8 +17,21 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    initializeBagLabels();
-  }, [service.id]);
+    if (viewMode && existingLabels.length > 0) {
+      // En modo vista, mostrar los rótulos existentes
+      setBagLabels(existingLabels.map((label, index) => ({
+        id: label.id,
+        bagNumber: label.bagNumber || index + 1,
+        photo: label.photo,
+        preview: label.photo,
+        labelCode: label.label,
+        uploaded: true
+      })));
+    } else {
+      // En modo edición, inicializar nuevos rótulos
+      initializeBagLabels();
+    }
+  }, [service.id, viewMode, existingLabels]);
 
   const initializeBagLabels = () => {
     // Crear array de bolsas para rotular
@@ -106,42 +118,52 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
     setSubmitting(true);
 
     try {
-      // Intentar guardar en la API primero
+      // Intentar guardar fotos usando el mismo sistema que el formulario de recogida
       let apiSuccess = false;
       
       try {
-        for (const label of bagLabels) {
-          const labelData = {
-            serviceId: service.id,
-            hotelId: service.hotel?.id || service.hotelId,
-            bagNumber: label.bagNumber,
-            label: label.labelCode,
-            photo: label.photo, // El archivo se enviará al backend
-            registeredById: user.id,
-            status: 'LABELED',
-            generatedAt: 'LAVANDERIA'
-          };
-
-          const response = await bagLabelService.createBagLabel(labelData);
-          if (!response.success) {
-            throw new Error(response.message);
+        // Extraer solo los archivos File de las fotos
+        const photoFiles = bagLabels.map(label => label.photo).filter(photo => photo instanceof File);
+        
+        if (photoFiles.length > 0) {
+          // Subir fotos usando el mismo endpoint que el formulario de recogida
+          const photoResponse = await serviceService.uploadServicePhotos(service.id, photoFiles, 'labeling');
+          
+          if (photoResponse.success) {
+            // Actualizar estado del servicio a LABELED
+            const statusResponse = await serviceService.updateServiceStatus(service.id, {
+              status: 'LABELED',
+              internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}`
+            });
+            
+            if (statusResponse.success) {
+              apiSuccess = true;
+              
+              // Guardar información de rótulos en storage local para referencia (SIN IMÁGENES)
+              for (const label of bagLabels) {
+                const labelData = {
+                  id: `label-${service.id}-${label.bagNumber}`,
+                  serviceId: service.id,
+                  hotelId: service.hotel?.id || service.hotelId,
+                  bagNumber: label.bagNumber,
+                  label: label.labelCode,
+                  photo: null, // No guardar imagen cuando se subió al servidor
+                  registeredById: user.id,
+                  timestamp: new Date().toISOString(),
+                  status: 'LABELED',
+                  generatedAt: 'LAVANDERIA'
+                };
+                
+                bagLabelStorage.addBagLabel(labelData);
+              }
+            }
           }
-        }
-        
-        // Actualizar estado del servicio en la API
-        const statusResponse = await serviceService.updateServiceStatus(service.id, {
-          status: 'LABELED',
-          internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}`
-        });
-        
-        if (statusResponse.success) {
-          apiSuccess = true;
         }
       } catch (apiError) {
         console.warn('Error en API, guardando localmente:', apiError);
       }
 
-      // Si la API falló, guardar en storage local
+      // Si la API falló, guardar todo localmente
       if (!apiSuccess) {
         // Guardar rótulos en storage local
         for (const label of bagLabels) {
@@ -169,6 +191,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
               ...s,
               status: SERVICE_STATUS.LABELED,
               labeledDate: new Date().toISOString(),
+              labelingPhotos: bagLabels.map(label => label.preview), // Guardar fotos como en pickup
               internalNotes: (s.internalNotes || '') + 
                 `\n[${new Date().toLocaleString()}] Rotulado completado por ${user.name}`,
               syncPending: true
@@ -210,7 +233,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
           <div className="flex justify-between items-start mb-6">
             <div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Rotulado de Servicio
+                {viewMode ? 'Ver Rotulado' : 'Rotulado de Servicio'}
               </h3>
               <div className="flex items-center space-x-4 text-sm text-gray-600">
                 <span className="font-medium text-gray-900">
@@ -219,6 +242,12 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
                 <span>•</span>
                 <span>Hab. {service.roomNumber}</span>
               </div>
+              {viewMode && (
+                <div className="mt-2 flex items-center space-x-2 text-sm text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Rotulado completado</span>
+                </div>
+              )}
             </div>
             <Button
               variant="ghost"
@@ -290,10 +319,10 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
           <Card className="mb-6">
             <Card.Header>
               <h4 className="font-medium text-gray-900">
-                Subir Imágenes de Rótulos ({bagLabels.filter(l => l.photo).length}/{service.bagCount})
+                {viewMode ? 'Rótulos Registrados' : `Subir Imágenes de Rótulos (${bagLabels.filter(l => l.photo).length}/${service.bagCount})`}
               </h4>
               <p className="text-sm text-gray-600">
-                Suba una imagen del rótulo físico para cada bolsa
+                {viewMode ? 'Imágenes de los rótulos físicos de cada bolsa' : 'Suba una imagen del rótulo físico para cada bolsa'}
               </p>
             </Card.Header>
             <Card.Content className="p-4">
@@ -318,14 +347,16 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
                           alt={`Rótulo bolsa ${label.bagNumber}`}
                           className="w-full h-32 object-cover rounded border"
                         />
-                        <button
-                          onClick={() => removePhoto(label.bagNumber)}
-                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
+                        {!viewMode && (
+                          <button
+                            onClick={() => removePhoto(label.bagNumber)}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
-                    ) : (
+                    ) : (!viewMode && (
                       <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors">
                         <input
                           type="file"
@@ -344,7 +375,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
                           </p>
                         </label>
                       </div>
-                    )}
+                    ))}
                   </div>
                 ))}
               </div>
@@ -353,22 +384,33 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
 
           {/* Action Buttons */}
           <div className="flex space-x-4">
-            <Button
-              onClick={handleSubmit}
-              disabled={!allPhotosUploaded() || submitting}
-              loading={submitting}
-              className="flex-1"
-            >
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Completar Rotulado
-            </Button>
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={submitting}
-            >
-              Cancelar
-            </Button>
+            {viewMode ? (
+              <Button
+                onClick={onClose}
+                className="flex-1"
+              >
+                Cerrar
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!allPhotosUploaded() || submitting}
+                  loading={submitting}
+                  className="flex-1"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Completar Rotulado
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={onClose}
+                  disabled={submitting}
+                >
+                  Cancelar
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>

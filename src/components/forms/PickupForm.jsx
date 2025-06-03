@@ -229,10 +229,10 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
     const files = Array.from(e.target.files);
     
     try {
-      if (files.length > 5) {
+      if (files.length > 40) {
         showNotification({
           type: 'warning',
-          message: 'Solo se permite un máximo de 5 fotos por servicio'
+          message: 'Solo se permite un máximo de 40 fotos por servicio'
         });
         return;
       }
@@ -260,10 +260,10 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
       }));
       
       // Verificar que no se exceda el límite total
-      if (photos.length + newPhotos.length > 5) {
+      if (photos.length + newPhotos.length > 40) {
         showNotification({
           type: 'warning',
-          message: `Solo se permite un máximo de 5 fotos (ya tiene ${photos.length})`
+          message: `Solo se permite un máximo de 40 fotos (ya tiene ${photos.length})`
         });
         return;
       }
@@ -691,7 +691,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                   Tomar Foto de las Bolsas
                 </p>
                 <p className="text-sm text-gray-500 text-center">
-                  Capture una foto clara de las bolsas recogidas para documentar el estado
+                  Capture fotos claras de las bolsas recogidas para documentar el estado (máximo 40 fotos)
                 </p>
               </label>
             </div>
@@ -705,7 +705,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
                       {photos.length} {photos.length === 1 ? 'foto' : 'fotos'} agregada{photos.length !== 1 ? 's' : ''}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {5 - photos.length} espacio{5 - photos.length !== 1 ? 's' : ''} disponible{5 - photos.length !== 1 ? 's' : ''}
+                      {40 - photos.length} espacio{40 - photos.length !== 1 ? 's' : ''} disponible{40 - photos.length !== 1 ? 's' : ''}
                     </p>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
