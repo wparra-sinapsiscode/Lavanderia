@@ -98,6 +98,49 @@ class BagLabelService {
   }
   
   /**
+   * Create a single bag label (for rotulado process)
+   * @param {Object} labelData - Label data
+   * @param {string} labelData.serviceId - Service ID
+   * @param {string} labelData.hotelId - Hotel ID
+   * @param {number} labelData.bagNumber - Bag number
+   * @param {string} labelData.label - Label code
+   * @param {File} labelData.photo - Photo file
+   * @param {string} labelData.registeredById - User ID who created the label
+   * @param {string} labelData.status - Label status
+   * @param {string} labelData.generatedAt - Where the label was generated
+   * @returns {Promise<Object>} Creation result
+   */
+  async createBagLabel(labelData) {
+    try {
+      const formData = new FormData();
+      
+      // Add all fields to FormData
+      Object.keys(labelData).forEach(key => {
+        if (key === 'photo' && labelData[key] instanceof File) {
+          formData.append('photo', labelData[key]);
+        } else if (labelData[key] !== null && labelData[key] !== undefined) {
+          formData.append(key, labelData[key]);
+        }
+      });
+
+      const response = await api.post('/bag-labels/single', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Create bag label error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al crear rótulo',
+        error
+      };
+    }
+  }
+
+  /**
    * Create new bag labels (batch creation)
    * @param {Object} labelData - Label data
    * @param {number} labelData.hotelId - Hotel ID

@@ -18,14 +18,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const [bagsToDeliver, setBagsToDeliver] = useState(Math.ceil(service.bagCount / 2));
   const [showRotuladoForm, setShowRotuladoForm] = useState(false);
 
-  // Debug log al abrir el modal
-  console.log('🔍 DEBUG - ServiceWorkflowModal opened with service:', {
-    id: service.id,
-    status: service.status,
-    guestName: service.guestName,
-    SERVICE_STATUS_VALUES: SERVICE_STATUS,
-    allServiceData: service
-  });
+  // Debug log al abrir el modal (removido para producción)
 
   // Mapeo de estados para manejar ambos formatos
   const statusMapping = {
@@ -101,14 +94,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   ];
 
   const getCurrentStepIndex = () => {
-    console.log('🔍 DEBUG - ServiceWorkflowModal getCurrentStepIndex:', {
-      originalStatus: service.status,
-      normalizedStatus: normalizedServiceStatus,
-      workflowSteps: workflowSteps.map(s => s.status)
-    });
-    const index = workflowSteps.findIndex(step => step.status === normalizedServiceStatus);
-    console.log('🔍 DEBUG - Current step index:', index);
-    return index;
+    return workflowSteps.findIndex(step => step.status === normalizedServiceStatus);
   };
 
   const getSelectedStepIndex = () => {
@@ -324,17 +310,13 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const requiresValidation = !validateStatusRequirements(step.status);
     const requirementMessage = getStatusRequirementMessage(step.status);
     
-    // Debug logs
-    if (index === 0 || isActive) {
-      console.log(`🔍 DEBUG - StatusStep ${step.title}:`, {
-        index,
-        isActive,
-        isCompleted,
-        isSelected,
-        stepStatus: step.status,
-        serviceStatus: service.status
-      });
-    }
+    // Handler para clicks en los estados
+    const handleStepClick = () => {
+      // Solo permitir click en ROTULADO si el servicio está RECOGIDO
+      if (step.status === SERVICE_STATUS.LABELED && normalizedServiceStatus === SERVICE_STATUS.PICKED_UP) {
+        setShowRotuladoForm(true);
+      }
+    };
     
     return (
       <div className="flex flex-col items-center relative flex-1">
@@ -346,9 +328,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 isCompleted ? `bg-${step.color}-100 border-${step.color}-500 text-${step.color}-600` :
                 'bg-gray-100 border-gray-300 text-gray-400'}
               ${isActive || isCompleted ? '' : 'opacity-50'}
-              cursor-default
+              ${step.status === SERVICE_STATUS.LABELED && normalizedServiceStatus === SERVICE_STATUS.PICKED_UP ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
-            onClick={() => {}}
+            onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
           >
             <IconComponent className="h-6 w-6" />

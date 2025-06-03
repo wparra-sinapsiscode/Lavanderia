@@ -1,237 +1,204 @@
 import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
-import { serviceStorage, bagLabelStorage } from '../../utils/storage';
+import { bagLabelStorage, serviceStorage } from '../../utils/storage';
+import bagLabelService from '../../services/bagLabel.service';
+import serviceService from '../../services/service.service';
 import { SERVICE_STATUS } from '../../types';
 import { formatDate } from '../../utils';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
-import Input from '../ui/Input';
-import { Camera, Tag, Package, CheckCircle, X, Upload } from 'lucide-react';
+import { Camera, Tag, Package, CheckCircle, X, Upload, User, MapPin, Calendar, Weight } from 'lucide-react';
 
 const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
-  const { success, error } = useNotifications();
+  const { user } = useAuth();
+  const { showNotification } = useNotifications();
   const [bagLabels, setBagLabels] = useState([]);
-
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
-    defaultValues: {
-      observations: ''
-    }
-  });
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    // Load existing bag labels for this service
-    const existingLabels = bagLabelStorage.getBagLabelsByService(service.id);
-    setBagLabels(existingLabels.map(label => ({
-      ...label,
-      photo: label.photo || null,
-      dragActive: false
-    })));
+    initializeBagLabels();
   }, [service.id]);
 
-  const handleDrag = (e, labelId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setBagLabels(prev => 
-        prev.map(label => 
-          label.id === labelId 
-            ? { ...label, dragActive: true }
-            : label
-        )
-      );
-    } else if (e.type === "dragleave") {
-      setBagLabels(prev => 
-        prev.map(label => 
-          label.id === labelId 
-            ? { ...label, dragActive: false }
-            : label
-        )
-      );
+  const initializeBagLabels = () => {
+    // Crear array de bolsas para rotular
+    const labels = [];
+    for (let i = 1; i <= service.bagCount; i++) {
+      labels.push({
+        id: `temp-${i}`,
+        bagNumber: i,
+        photo: null,
+        preview: null,
+        labelCode: generateLabelCode(i),
+        uploaded: false
+      });
     }
+    setBagLabels(labels);
   };
 
-  const handleDrop = (e, labelId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setBagLabels(prev => 
-      prev.map(label => 
-        label.id === labelId 
-          ? { ...label, dragActive: false }
-          : label
-      )
-    );
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFiles(e.dataTransfer.files, labelId);
-    }
+  const generateLabelCode = (bagNumber) => {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const serviceShort = service.id.slice(-4).toUpperCase();
+    return `ROT-${dateStr}-${serviceShort}-${bagNumber.toString().padStart(2, '0')}`;
   };
 
-  const handleFileChange = (e, labelId) => {
-    if (e.target.files) {
-      handleFiles(e.target.files, labelId);
-    }
-  };
+  const handlePhotoChange = (bagNumber, event) => {
+    const file = event.target.files[0];
+    if (!file) return;
 
-  const handleFiles = (files, labelId) => {
-    const file = files[0]; // Solo tomar el primer archivo
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const newPhoto = {
-          id: Date.now() + Math.random(),
-          file: file,
-          url: e.target.result,
-          name: file.name,
-          size: file.size,
-          timestamp: new Date().toISOString()
-        };
-        
-        setBagLabels(prev => 
-          prev.map(label => 
-            label.id === labelId 
-              ? { ...label, photo: newPhoto, updatedAt: new Date().toISOString() }
-              : label
-          )
-        );
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removePhoto = (labelId) => {
-    setBagLabels(prev => 
-      prev.map(label => 
-        label.id === labelId 
-          ? { ...label, photo: null, updatedAt: new Date().toISOString() }
-          : label
-      )
-    );
-  };
-
-  const handleLabelUpdate = (labelId, field, value) => {
-    setBagLabels(prev => 
-      prev.map(label => 
-        label.id === labelId 
-          ? { ...label, [field]: value, updatedAt: new Date().toISOString() }
-          : label
-      )
-    );
-  };
-
-  const addNewLabel = () => {
-    // Validate that we don't exceed the service bag count
-    if (bagLabels.length >= service.bagCount) {
-      error('Límite Excedido', `No puede agregar más de ${service.bagCount} rótulos. Este servicio solo tiene ${service.bagCount} bolsas.`);
+    // Validar que sea una imagen
+    if (!file.type.startsWith('image/')) {
+      showNotification({
+        type: 'error',
+        message: 'Solo se permiten archivos de imagen'
+      });
       return;
     }
 
-    const newLabel = {
-      id: Date.now() + Math.random(),
-      serviceId: service.id,
-      hotelId: service.hotelId,
-      hotelName: service.hotel,
-      label: '',
-      bagNumber: bagLabels.length + 1,
-      registeredBy: 'current_user', // TODO: Get from auth context
-      registeredByName: 'Usuario Actual',
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      generatedAt: 'lavanderia',
-      observations: '',
-      photo: null,
-      dragActive: false
-    };
-    setBagLabels(prev => [...prev, newLabel]);
-  };
-
-  const removeLabel = (labelId) => {
-    setBagLabels(prev => prev.filter(label => label.id !== labelId));
-  };
-
-  const onSubmit = async (data) => {
-    try {
-      // Validate that we have labels for the service
-      if (bagLabels.length === 0) {
-        error('Error', 'Debe agregar al menos un rótulo');
-        return;
-      }
-
-      // Validate that number of labels matches service bag count
-      if (bagLabels.length !== service.bagCount) {
-        error(
-          'Error de Validación', 
-          `Debe crear exactamente ${service.bagCount} rótulos para este servicio. Actualmente tiene ${bagLabels.length} rótulos.`
-        );
-        return;
-      }
-
-      // Validate that all labels have content
-      const invalidLabels = bagLabels.filter(label => !label.label || label.label.trim() === '');
-      if (invalidLabels.length > 0) {
-        error('Error', 'Todos los rótulos deben tener contenido');
-        return;
-      }
-
-      // Validate that each bag label has a photo
-      const labelsWithoutPhotos = bagLabels.filter(label => !label.photo);
-      if (labelsWithoutPhotos.length > 0) {
-        error('Fotos Requeridas', `Faltan fotos para ${labelsWithoutPhotos.length} rótulo(s). Cada rótulo debe tener su foto correspondiente.`);
-        return;
-      }
-
-      // Save/update bag labels with their individual photos
-      bagLabels.forEach(label => {
-        const labelData = {
-          ...label,
-          status: 'labeled',
-          labeledAt: new Date().toISOString(),
-          photo: label.photo ? label.photo.url : null // Store the photo URL
-        };
-        
-        if (label.id.toString().includes('.')) {
-          // New label, add it
-          bagLabelStorage.addBagLabel(labelData);
-        } else {
-          // Existing label, update it
-          bagLabelStorage.updateBagLabel(label.id, labelData);
-        }
+    // Validar tamaño (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      showNotification({
+        type: 'error',
+        message: 'La imagen no debe superar los 5MB'
       });
+      return;
+    }
 
-      // Update service status
-      const services = serviceStorage.getServices();
-      const photosCount = bagLabels.filter(label => label.photo).length;
-      const updatedServices = services.map(s => {
-        if (s.id === service.id) {
-          return {
-            ...s,
-            status: SERVICE_STATUS.LABELED,
-            labeledDate: new Date().toISOString(),
-            internalNotes: (s.internalNotes || '') + 
-              ` | Rotulado completado - ${bagLabels.length} rótulos creados - ${photosCount} fotos individuales agregadas - ${new Date().toLocaleString('es-PE')}`
-          };
-        }
-        return s;
-      });
-
-      serviceStorage.setServices(updatedServices);
-
-      success(
-        'Rotulado Completado',
-        `Se han registrado ${bagLabels.length} rótulos, cada uno con su foto correspondiente`
+    // Crear preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setBagLabels(prev => 
+        prev.map(label => 
+          label.bagNumber === bagNumber
+            ? { ...label, photo: file, preview: e.target.result }
+            : label
+        )
       );
+    };
+    reader.readAsDataURL(file);
+  };
 
+  const removePhoto = (bagNumber) => {
+    setBagLabels(prev => 
+      prev.map(label => 
+        label.bagNumber === bagNumber
+          ? { ...label, photo: null, preview: null }
+          : label
+      )
+    );
+  };
+
+  const allPhotosUploaded = () => {
+    return bagLabels.every(label => label.photo !== null);
+  };
+
+  const handleSubmit = async () => {
+    if (!allPhotosUploaded()) {
+      showNotification({
+        type: 'error',
+        message: 'Debe subir una imagen para cada bolsa'
+      });
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      // Intentar guardar en la API primero
+      let apiSuccess = false;
+      
+      try {
+        for (const label of bagLabels) {
+          const labelData = {
+            serviceId: service.id,
+            hotelId: service.hotel?.id || service.hotelId,
+            bagNumber: label.bagNumber,
+            label: label.labelCode,
+            photo: label.photo, // El archivo se enviará al backend
+            registeredById: user.id,
+            status: 'LABELED',
+            generatedAt: 'LAVANDERIA'
+          };
+
+          const response = await bagLabelService.createBagLabel(labelData);
+          if (!response.success) {
+            throw new Error(response.message);
+          }
+        }
+        
+        // Actualizar estado del servicio en la API
+        const statusResponse = await serviceService.updateServiceStatus(service.id, {
+          status: 'LABELED',
+          internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}`
+        });
+        
+        if (statusResponse.success) {
+          apiSuccess = true;
+        }
+      } catch (apiError) {
+        console.warn('Error en API, guardando localmente:', apiError);
+      }
+
+      // Si la API falló, guardar en storage local
+      if (!apiSuccess) {
+        // Guardar rótulos en storage local
+        for (const label of bagLabels) {
+          const labelData = {
+            id: `label-${service.id}-${label.bagNumber}`,
+            serviceId: service.id,
+            hotelId: service.hotel?.id || service.hotelId,
+            bagNumber: label.bagNumber,
+            label: label.labelCode,
+            photo: label.preview, // Guardamos el base64 localmente
+            registeredById: user.id,
+            timestamp: new Date().toISOString(),
+            status: 'LABELED',
+            generatedAt: 'LAVANDERIA'
+          };
+          
+          bagLabelStorage.addBagLabel(labelData);
+        }
+
+        // Actualizar estado del servicio localmente
+        const services = serviceStorage.getServices();
+        const updatedServices = services.map(s => {
+          if (s.id === service.id) {
+            return {
+              ...s,
+              status: SERVICE_STATUS.LABELED,
+              labeledDate: new Date().toISOString(),
+              internalNotes: (s.internalNotes || '') + 
+                `\n[${new Date().toLocaleString()}] Rotulado completado por ${user.name}`,
+              syncPending: true
+            };
+          }
+          return s;
+        });
+        
+        serviceStorage.setServices(updatedServices);
+      }
+
+      showNotification({
+        type: 'success',
+        message: `Rotulado completado exitosamente para ${service.guestName}. ${service.bagCount} bolsas rotuladas.`
+      });
+
+      // Notificar cambios y cerrar
       if (onStatusUpdated) {
         onStatusUpdated();
       }
+      onClose();
 
-      if (onClose) {
-        onClose();
-      }
-
-    } catch (err) {
-      console.error('Error completing labeling:', err);
-      error('Error', 'Ocurrió un error al completar el rotulado');
+    } catch (error) {
+      console.error('Error al completar rotulado:', error);
+      showNotification({
+        type: 'error',
+        message: `Error al completar rotulado: ${error.message}`
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -242,20 +209,15 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
           {/* Header */}
           <div className="flex justify-between items-start mb-6">
             <div>
-              <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-                <Tag className="h-6 w-6 mr-2 text-blue-600" />
-                Rotulado de Bolsas
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                Rotulado de Servicio
               </h3>
-              <div className="mt-2 space-y-1">
-                <p className="text-sm text-gray-600">
-                  <strong>Cliente:</strong> {service.guestName} - Hab. {service.roomNumber}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Hotel:</strong> {service.hotel}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Bolsas:</strong> {service.bagCount}
-                </p>
+              <div className="flex items-center space-x-4 text-sm text-gray-600">
+                <span className="font-medium text-gray-900">
+                  {service.guestName}
+                </span>
+                <span>•</span>
+                <span>Hab. {service.roomNumber}</span>
               </div>
             </div>
             <Button
@@ -268,176 +230,146 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated }) => {
             </Button>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Bag Labels Section */}
-            <Card>
-              <Card.Header>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <Package className="h-5 w-5 mr-2 text-green-600" />
-                    <h4 className="text-lg font-medium text-gray-900">
-                      Rótulos de Bolsas ({bagLabels.length})
-                    </h4>
+          {/* Service Information */}
+          <Card className="mb-6">
+            <Card.Header>
+              <h4 className="font-medium text-gray-900">Información del Servicio</h4>
+            </Card.Header>
+            <Card.Content className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="flex items-center space-x-2">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <p className="text-gray-500">Hotel</p>
+                    <p className="font-medium">
+                      {typeof service.hotel === 'object' ? service.hotel.name : service.hotel}
+                    </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addNewLabel}
-                  >
-                    <Tag className="h-4 w-4 mr-1" />
-                    Agregar Rótulo
-                  </Button>
                 </div>
-              </Card.Header>
-              <Card.Content>
-                {bagLabels.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p>No hay rótulos registrados</p>
-                    <p className="text-sm">Haz clic en "Agregar Rótulo" para comenzar</p>
+                
+                <div className="flex items-center space-x-2">
+                  <User className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <p className="text-gray-500">Repartidor</p>
+                    <p className="font-medium">
+                      {typeof service.repartidor === 'object' ? service.repartidor.name : service.repartidor || 'No asignado'}
+                    </p>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {bagLabels.map((label, index) => (
-                      <div key={label.id} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h5 className="font-medium text-gray-900">
-                            Bolsa #{label.bagNumber}
-                          </h5>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeLabel(label.id)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Código de Rótulo *
-                            </label>
-                            <input
-                              type="text"
-                              value={label.label}
-                              onChange={(e) => handleLabelUpdate(label.id, 'label', e.target.value)}
-                              placeholder="Ej: HTL-20241127-1030-01-47"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Observaciones
-                            </label>
-                            <input
-                              type="text"
-                              value={label.observations || ''}
-                              onChange={(e) => handleLabelUpdate(label.id, 'observations', e.target.value)}
-                              placeholder="Observaciones especiales..."
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Foto de la Bolsa *
-                            </label>
-                            {!label.photo ? (
-                              <div
-                                className={`
-                                  border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer
-                                  ${label.dragActive 
-                                    ? 'border-blue-500 bg-blue-50' 
-                                    : 'border-gray-300 hover:border-gray-400'
-                                  }
-                                `}
-                                onDragEnter={(e) => handleDrag(e, label.id)}
-                                onDragLeave={(e) => handleDrag(e, label.id)}
-                                onDragOver={(e) => handleDrag(e, label.id)}
-                                onDrop={(e) => handleDrop(e, label.id)}
-                                onClick={() => document.getElementById(`photo-upload-${label.id}`).click()}
-                              >
-                                <Upload className="h-6 w-6 mx-auto mb-2 text-gray-400" />
-                                <p className="text-xs text-gray-600 mb-1">
-                                  Arrastra o haz clic
-                                </p>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={(e) => handleFileChange(e, label.id)}
-                                  className="hidden"
-                                  id={`photo-upload-${label.id}`}
-                                />
-                              </div>
-                            ) : (
-                              <div className="relative">
-                                <img
-                                  src={label.photo.url}
-                                  alt={`Foto ${label.label}`}
-                                  className="w-full h-20 object-cover rounded-lg border border-gray-200"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => removePhoto(label.id)}
-                                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 text-xs hover:bg-red-600"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                                <div className="mt-1 text-xs text-gray-500 truncate">
-                                  {label.photo.name} ({(label.photo.size / 1024).toFixed(1)} KB)
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Package className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <p className="text-gray-500">Bolsas</p>
+                    <p className="font-medium">{service.bagCount}</p>
                   </div>
-                )}
-              </Card.Content>
-            </Card>
+                </div>
 
+                <div className="flex items-center space-x-2">
+                  <Weight className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <p className="text-gray-500">Peso</p>
+                    <p className="font-medium">{service.weight || 'N/A'} kg</p>
+                  </div>
+                </div>
+              </div>
 
-            {/* General Observations */}
-            <Card>
-              <Card.Content>
+              <div className="mt-4 flex items-center space-x-2">
+                <Calendar className="h-4 w-4 text-gray-400" />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Observaciones Generales
-                  </label>
-                  <textarea
-                    {...register('observations')}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Observaciones adicionales sobre el proceso de rotulado..."
-                  />
+                  <p className="text-gray-500 text-sm">Fecha de recogida</p>
+                  <p className="font-medium text-sm">
+                    {formatDate(service.pickupDate || service.timestamp)}
+                  </p>
                 </div>
-              </Card.Content>
-            </Card>
+              </div>
+            </Card.Content>
+          </Card>
 
-            {/* Action Buttons */}
-            <div className="flex space-x-4">
-              <Button
-                type="submit"
-                className="flex-1"
-                disabled={bagLabels.length === 0}
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Completar Rotulado ({bagLabels.length} rótulos con fotos)
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-              >
-                Cancelar
-              </Button>
-            </div>
-          </form>
+          {/* Bag Labeling Section */}
+          <Card className="mb-6">
+            <Card.Header>
+              <h4 className="font-medium text-gray-900">
+                Subir Imágenes de Rótulos ({bagLabels.filter(l => l.photo).length}/{service.bagCount})
+              </h4>
+              <p className="text-sm text-gray-600">
+                Suba una imagen del rótulo físico para cada bolsa
+              </p>
+            </Card.Header>
+            <Card.Content className="p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {bagLabels.map((label) => (
+                  <div key={label.bagNumber} className="border rounded-lg p-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <h5 className="font-medium text-gray-900">
+                        Bolsa {label.bagNumber}
+                      </h5>
+                      <Tag className="h-4 w-4 text-gray-400" />
+                    </div>
+                    
+                    <div className="text-xs text-gray-600 mb-3 font-mono bg-gray-50 p-2 rounded">
+                      {label.labelCode}
+                    </div>
+
+                    {label.preview ? (
+                      <div className="relative">
+                        <img 
+                          src={label.preview} 
+                          alt={`Rótulo bolsa ${label.bagNumber}`}
+                          className="w-full h-32 object-cover rounded border"
+                        />
+                        <button
+                          onClick={() => removePhoto(label.bagNumber)}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handlePhotoChange(label.bagNumber, e)}
+                          className="hidden"
+                          id={`photo-${label.bagNumber}`}
+                        />
+                        <label 
+                          htmlFor={`photo-${label.bagNumber}`}
+                          className="cursor-pointer"
+                        >
+                          <Camera className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                          <p className="text-sm text-gray-600">
+                            Subir imagen
+                          </p>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card.Content>
+          </Card>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-4">
+            <Button
+              onClick={handleSubmit}
+              disabled={!allPhotosUploaded() || submitting}
+              loading={submitting}
+              className="flex-1"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Completar Rotulado
+            </Button>
+            <Button
+              variant="outline"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Cancelar
+            </Button>
+          </div>
         </div>
       </div>
     </div>

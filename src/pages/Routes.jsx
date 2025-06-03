@@ -53,6 +53,104 @@ const Routes = () => {
     return () => window.removeEventListener('routesUpdated', handleRoutesUpdate);
   }, [selectedDate]);
 
+  // Función para detectar si una ruta está completada
+  const isRouteCompleted = (route) => {
+    if (!route.hotels || route.hotels.length === 0) return false;
+    
+    // Verificar cada hotel en la ruta
+    return route.hotels.every(hotel => {
+      if (!hotel.services || hotel.services.length === 0) return true;
+      
+      // Si todos los servicios del hotel están recogidos o en proceso superior
+      return hotel.services.every(service => 
+        ['PICKED_UP', 'LABELED', 'IN_PROCESS', 'PARTIAL_DELIVERY', 'COMPLETED'].includes(service.status)
+      );
+    });
+  };
+
+  // Función para obtener el estado correcto de la ruta
+  const getRouteStatus = (route) => {
+    if (isRouteCompleted(route)) {
+      return {
+        status: 'completada',
+        displayText: 'Completada',
+        color: 'green',
+        bgColor: 'bg-green-100',
+        textColor: 'text-green-800',
+        message: 'Todos los recojos finalizados'
+      };
+    } else if (route.status === 'en_progreso') {
+      return {
+        status: 'en_progreso', 
+        displayText: 'En Progreso',
+        color: 'blue',
+        bgColor: 'bg-blue-100',
+        textColor: 'text-blue-800',
+        message: 'Ruta activa'
+      };
+    } else {
+      return {
+        status: route.status,
+        displayText: route.status === 'planificada' ? 'Planificada' : route.status,
+        color: 'gray',
+        bgColor: 'bg-gray-100',
+        textColor: 'text-gray-800',
+        message: ''
+      };
+    }
+  };
+
+  // Calcular progreso real basado en servicios completados
+  const getHotelProgress = (route) => {
+    let completedHotels = 0;
+    
+    route.hotels?.forEach(hotel => {
+      // Hotel completado = todos sus servicios recogidos
+      const allServicesPickedUp = hotel.services?.every(service =>
+        ['PICKED_UP', 'LABELED', 'IN_PROCESS', 'PARTIAL_DELIVERY', 'COMPLETED'].includes(service.status)
+      ) || true; // true si no hay servicios
+      
+      if (allServicesPickedUp) {
+        completedHotels++;
+      }
+    });
+    
+    return {
+      completed: completedHotels,
+      total: route.hotels?.length || 0,
+      percentage: Math.round((completedHotels / (route.hotels?.length || 1)) * 100)
+    };
+  };
+
+  // Obtener resumen de servicios del hotel
+  const getHotelServicesSummary = (hotel) => {
+    if (!hotel.services || hotel.services.length === 0) {
+      return "Sin servicios asignados";
+    }
+    
+    const pendingPickups = hotel.services.filter(s => 
+      s.status === 'PENDING_PICKUP' || s.status === 'ASSIGNED_TO_ROUTE'
+    ).length;
+    
+    const pickedUp = hotel.services.filter(s => 
+      ['PICKED_UP', 'LABELED', 'IN_PROCESS'].includes(s.status)
+    ).length;
+    
+    const completed = hotel.services.filter(s => 
+      ['PARTIAL_DELIVERY', 'COMPLETED'].includes(s.status)
+    ).length;
+    
+    if (pendingPickups > 0) {
+      return `${pendingPickups} recojos pendientes`;
+    } else if (pickedUp > 0) {
+      return `✅ ${pickedUp} servicios recogidos - En lavandería`;
+    } else if (completed > 0) {
+      return `✅ ${completed} servicios listos para entrega`;
+    }
+    
+    return "Estado desconocido";
+  };
+
   const loadRoutesData = async () => {
     try {
       setLoading(true);
@@ -442,8 +540,10 @@ const Routes = () => {
   const RouteCard = ({ route }) => {
     const isActive = activeRoute?.id === route.id;
     const canManageRoute = isAdmin || route.repartidorId === user.id;
-    const completedStops = route.hotels.filter(h => h.completed).length;
-    const progress = (completedStops / route.hotels.length) * 100;
+    // Calculate completion stats using new logic
+    const hotelProgress = getHotelProgress(route);
+    const completedStops = hotelProgress.completed;
+    const progress = hotelProgress.percentage;
     const routeType = route.type === 'delivery' ? 'Entrega' : 'Recojo';
     
     return (
@@ -467,14 +567,14 @@ const Routes = () => {
                 </p>
               )}
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-              route.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-              route.status === 'en_progreso' ? 'bg-blue-100 text-blue-800' :
-              'bg-green-100 text-green-800'
-            }`}>
-              {route.status === 'pendiente' ? 'Pendiente' :
-               route.status === 'en_progreso' ? 'En Progreso' : 'Completada'}
-            </span>
+            {(() => {
+              const routeStatus = getRouteStatus(route);
+              return (
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${routeStatus.bgColor} ${routeStatus.textColor}`}>
+                  {routeStatus.displayText}
+                </span>
+              );
+            })()}
           </div>
         </Card.Header>
         
@@ -524,19 +624,26 @@ const Routes = () => {
                   console.log(`Service ${i + 1}:`, service.guestName, service.status);
                 });
                 return (
-                <div key={`${route.id}-hotel-${hotel.hotelId}-${index}`} className={`flex items-center justify-between p-2 rounded border ${
-                  hotel.completed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
-                }`}>
-                  <div className="flex items-center">
-                    {hotel.completed ? (
-                      <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                    ) : (
-                      <Clock className="h-4 w-4 text-gray-400 mr-2" />
-                    )}
+                  (() => {
+                  // Determinar si el hotel está completado usando nueva lógica
+                  const hotelCompleted = hotel.services?.every(service =>
+                    ['PICKED_UP', 'LABELED', 'IN_PROCESS', 'PARTIAL_DELIVERY', 'COMPLETED'].includes(service.status)
+                  ) || !hotel.services || hotel.services.length === 0;
+                  
+                  return (
+                    <div key={`${route.id}-hotel-${hotel.hotelId}-${index}`} className={`flex items-center justify-between p-2 rounded border ${
+                      hotelCompleted ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex items-center">
+                        {hotelCompleted ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-gray-400 mr-2" />
+                        )}
                     <div>
                       <p className="text-sm font-medium">{hotel.hotelName}</p>
                       <p className="text-xs text-gray-600">
-                        {hotel.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length || 0} recojos • {hotel.deliveries?.length || 0} entregas • 
+                        {getHotelServicesSummary(hotel)} • 
                         {hotel.estimatedTimeMinutes ? ` ${hotel.estimatedTimeMinutes} min` : hotel.estimatedTime}
                       </p>
                       <div className="flex gap-1 mt-1">
@@ -599,7 +706,9 @@ const Routes = () => {
                       ))}
                     </div>
                   )}
-                </div>
+                    </div>
+                  );
+                })()
                 );
               })}
             </div>
@@ -615,38 +724,62 @@ const Routes = () => {
                 Ver Detalle
               </Button>
               
-              {route.status === 'pendiente' && !isAdmin && route.repartidorId === user.id && (
-                <Button
-                  onClick={() => startRoute(route.id)}
-                  disabled={loading}
-                  className="flex-1"
-                >
-                  <Play className="h-4 w-4 mr-2" />
-                  Iniciar Ruta
-                </Button>
-              )}
-              
-              {route.status === 'en_progreso' && (
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  disabled
-                >
-                  <Pause className="h-4 w-4 mr-2" />
-                  En Progreso
-                </Button>
-              )}
-              
-              {route.status === 'completada' && (
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  disabled
-                >
-                  <Flag className="h-4 w-4 mr-2" />
-                  Completada
-                </Button>
-              )}
+              {(() => {
+                const routeStatus = getRouteStatus(route);
+                
+                if (routeStatus.status === 'completada') {
+                  return (
+                    <Button
+                      onClick={() => navigate('/bag-labels', { 
+                        state: { 
+                          fromRoute: true,
+                          routeId: route.id,
+                          services: route.hotels.flatMap(h => h.services || []).filter(s => 
+                            ['PICKED_UP'].includes(s.status)
+                          )
+                        }
+                      })}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <Package className="h-4 w-4 mr-2" />
+                      Siguiente: Rotular →
+                    </Button>
+                  );
+                } else if (route.status === 'pendiente' && !isAdmin && route.repartidorId === user.id) {
+                  return (
+                    <Button
+                      onClick={() => startRoute(route.id)}
+                      disabled={loading}
+                      className="flex-1"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Iniciar Ruta
+                    </Button>
+                  );
+                } else if (route.status === 'en_progreso') {
+                  return (
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      disabled
+                    >
+                      <Pause className="h-4 w-4 mr-2" />
+                      {routeStatus.displayText}
+                    </Button>
+                  );
+                } else {
+                  return (
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      disabled
+                    >
+                      <Flag className="h-4 w-4 mr-2" />
+                      {routeStatus.displayText}
+                    </Button>
+                  );
+                }
+              })()}
             </div>
           </div>
         </Card.Content>
