@@ -7,6 +7,7 @@ import { formatDate, getStatusColor, getStatusText } from '../../utils';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import RotuladoForm from './RotuladoForm';
+import ProcessDecisionModal from './ProcessDecisionModal';
 import { Clock, CheckCircle, Package, Truck, Star, X, ArrowRight, Tag } from 'lucide-react';
 
 const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
@@ -17,6 +18,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const [selectedBags, setSelectedBags] = useState([]);
   const [bagsToDeliver, setBagsToDeliver] = useState(Math.ceil(service.bagCount / 2));
   const [showRotuladoForm, setShowRotuladoForm] = useState(false);
+  const [showProcessDecision, setShowProcessDecision] = useState(false);
   const [existingLabels, setExistingLabels] = useState([]);
 
   // Debug log al abrir el modal (removido para producción)
@@ -107,7 +109,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     switch (targetStatus) {
       case SERVICE_STATUS.PICKED_UP:
         // To mark as picked up, service must have been processed through pickup form
-        return service.weight && service.photos && service.signature && service.collectorName;
+        return service.weight && service.photos && service.collectorName;
       
       case SERVICE_STATUS.LABELED:
         // To mark as labeled, service must be picked up first
@@ -125,7 +127,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const getStatusRequirementMessage = (targetStatus) => {
     switch (targetStatus) {
       case SERVICE_STATUS.PICKED_UP:
-        return 'Para marcar como recogido se requiere: peso, fotos, firma y nombre del recolector';
+        return 'Para marcar como recogido se requiere: peso, fotos y nombre del recolector';
       
       case SERVICE_STATUS.LABELED:
         return 'Para rotular, el servicio debe estar en estado "Recogido"';
@@ -308,8 +310,10 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     // Check if this is the next available step
     const isNextAvailable = step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS);
     
-    // Check if IN_PROCESS should be available (when service is PICKED_UP - parallel with LABELED)
-    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED);
+    // Check if IN_PROCESS should be available (when service has rotulado data)
+    const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
+    const hasLabelData = serviceLabels.length > 0 && serviceLabels.some(label => label.label && label.label.trim() !== '');
+    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && hasLabelData;
     
     // Handler para clicks en los estados
     const handleStepClick = () => {
@@ -317,10 +321,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       if (step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) {
         setShowRotuladoForm(true);
       }
-      // Click en EN PROCESO - cambiar estado si está recogido (paralelo con rotulado)
-      else if (step.status === SERVICE_STATUS.IN_PROCESS && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED)) {
-        setSelectedStatus(SERVICE_STATUS.IN_PROCESS);
-        handleStatusUpdate();
+      // Click en EN PROCESO - mostrar modal de decisión si tiene datos de rotulado
+      else if (step.status === SERVICE_STATUS.IN_PROCESS && hasLabelData) {
+        setShowProcessDecision(true);
       }
     };
     
@@ -350,7 +353,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 'bg-gray-100 border-gray-300 text-gray-400'}
               ${isActive || isCompleted || isNextAvailable || isInProcessAvailable ? '' : 'opacity-50'}
               ${(step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) ||
-                (step.status === SERVICE_STATUS.IN_PROCESS && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED)) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
+                (step.status === SERVICE_STATUS.IN_PROCESS && hasLabelData) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
             onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
@@ -656,6 +659,21 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           }}
           onStatusUpdated={() => {
             setShowRotuladoForm(false);
+            onStatusUpdated();
+            onClose();
+          }}
+        />
+      )}
+
+      {/* Process Decision Modal */}
+      {showProcessDecision && (
+        <ProcessDecisionModal
+          service={service}
+          onClose={() => {
+            setShowProcessDecision(false);
+          }}
+          onStatusUpdated={() => {
+            setShowProcessDecision(false);
             onStatusUpdated();
             onClose();
           }}

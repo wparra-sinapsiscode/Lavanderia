@@ -373,10 +373,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
             ...pickupData,
             serviceId,
             photos: photos.map(p => p.file),
-            signature: await (async () => {
-              const res = await fetch(signature);
-              return res.blob();
-            })(),
+            signature: null, // Firma removida del formulario
             serviceStatus: 'PENDING_PICKUP', // Mantener estado hasta confirmación manual
             price
           };

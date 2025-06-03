@@ -3,6 +3,7 @@ import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
 import { bagLabelStorage, serviceStorage } from '../../utils/storage';
 import serviceService from '../../services/service.service';
+import bagLabelService from '../../services/bagLabel.service';
 import { SERVICE_STATUS } from '../../types';
 import { formatDate } from '../../utils';
 import Button from '../ui/Button';
@@ -12,51 +13,170 @@ import { Camera, Tag, Package, CheckCircle, X, Upload, User, MapPin, Calendar, W
 const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, existingLabels = [] }) => {
   const { user } = useAuth();
   const { showNotification } = useNotifications();
-  const [bagLabels, setBagLabels] = useState([]);
+  const [labelCodes, setLabelCodes] = useState([]);
+  const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [bulkQuantity, setBulkQuantity] = useState('');
+  const [existingDbLabels, setExistingDbLabels] = useState([]);
+
+  useEffect(() => {
+    if (service?.id) {
+      loadExistingLabels();
+    }
+  }, [service?.id]);
 
   useEffect(() => {
     if (viewMode && existingLabels.length > 0) {
       // En modo vista, mostrar los rótulos existentes
-      setBagLabels(existingLabels.map((label, index) => ({
-        id: label.id,
-        bagNumber: label.bagNumber || index + 1,
-        photo: label.photo,
+      setLabelCodes(existingLabels.map((label, index) => ({
+        id: index + 1,
+        code: label.label || '',
+      })));
+      setPhotos(existingLabels.map((label, index) => ({
+        id: index + 1,
+        file: null,
         preview: label.photo,
-        labelCode: label.label,
+        uploaded: true
+      })));
+    } else if (viewMode && existingDbLabels.length > 0) {
+      // En modo vista, mostrar los rótulos de la base de datos
+      setLabelCodes(existingDbLabels.map((label, index) => ({
+        id: index + 1,
+        code: label.label || '',
+      })));
+      setPhotos(existingDbLabels.map((label, index) => ({
+        id: index + 1,
+        file: null,
+        preview: label.photo ? `http://localhost:5000${label.photo}` : null,
         uploaded: true
       })));
     } else {
-      // En modo edición, inicializar nuevos rótulos
-      initializeBagLabels();
+      // En modo edición, inicializar con un rótulo vacío
+      initializeFields();
     }
-  }, [service.id, viewMode, existingLabels]);
+  }, [service.id, viewMode, existingLabels, existingDbLabels]);
 
-  const initializeBagLabels = () => {
-    // Crear array de bolsas para rotular
-    const labels = [];
-    for (let i = 1; i <= service.bagCount; i++) {
-      labels.push({
-        id: `temp-${i}`,
-        bagNumber: i,
-        photo: null,
-        preview: null,
-        labelCode: generateLabelCode(i),
-        uploaded: false
-      });
+  const loadExistingLabels = async () => {
+    try {
+      const response = await bagLabelService.getServiceLabels(service.id);
+      if (response.success && response.data) {
+        setExistingDbLabels(response.data);
+        console.log('Rótulos existentes cargados:', response.data);
+      }
+    } catch (error) {
+      console.error('Error al cargar rótulos existentes:', error);
     }
-    setBagLabels(labels);
   };
 
-  const generateLabelCode = (bagNumber) => {
+  const initializeFields = () => {
+    // Inicializar con un rótulo y sin fotos
+    setLabelCodes([{ id: 1, code: generateLabelCode(1) }]);
+    setPhotos([]);
+  };
+
+  const generateLabelCode = (sequence) => {
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const serviceShort = service.id.slice(-4).toUpperCase();
-    return `ROT-${dateStr}-${serviceShort}-${bagNumber.toString().padStart(2, '0')}`;
+    return `ROT-${dateStr}-${serviceShort}-${sequence.toString().padStart(2, '0')}`;
   };
 
-  const handlePhotoChange = (bagNumber, event) => {
+  // Funciones para manejar códigos de rótulos
+  const addLabelCode = () => {
+    const newId = Math.max(...labelCodes.map(l => l.id), 0) + 1;
+    const newCode = generateLabelCode(newId);
+    setLabelCodes([...labelCodes, { id: newId, code: newCode }]);
+  };
+
+  const removeLabelCode = (id) => {
+    if (labelCodes.length > 1) {
+      setLabelCodes(labelCodes.filter(label => label.id !== id));
+    }
+  };
+
+  const updateLabelCode = (id, newCode) => {
+    setLabelCodes(labelCodes.map(label => 
+      label.id === id ? { ...label, code: newCode } : label
+    ));
+  };
+
+  // Función para generar múltiples rótulos automáticamente
+  const generateBulkLabels = () => {
+    const targetTotal = parseInt(bulkQuantity);
+    
+    if (!targetTotal || targetTotal < 1) {
+      showNotification({
+        type: 'error',
+        message: 'Ingrese una cantidad válida (mínimo 1)'
+      });
+      return;
+    }
+    
+    if (targetTotal > 100) {
+      showNotification({
+        type: 'error',
+        message: 'No se pueden generar más de 100 rótulos a la vez'
+      });
+      return;
+    }
+
+    const currentCount = labelCodes.length;
+    
+    // Si ya tenemos la cantidad deseada o más
+    if (currentCount >= targetTotal) {
+      showNotification({
+        type: 'warning',
+        message: `Ya tienes ${currentCount} rótulos. No se necesita generar más para llegar a ${targetTotal}.`
+      });
+      return;
+    }
+
+    // Calcular cuántos rótulos necesitamos generar
+    const quantityToGenerate = targetTotal - currentCount;
+
+    // Confirmar la operación
+    if (currentCount > 0) {
+      const confirmed = window.confirm(
+        `Actualmente tienes ${currentCount} rótulo${currentCount !== 1 ? 's' : ''}.\nPara llegar a ${targetTotal} rótulos necesitas generar ${quantityToGenerate} más.\n\n¿Proceder?`
+      );
+      
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    // Generar los nuevos rótulos
+    const newLabels = [];
+    const startingId = Math.max(...labelCodes.map(l => l.id), 0) + 1;
+    
+    for (let i = 0; i < quantityToGenerate; i++) {
+      const id = startingId + i;
+      const code = generateLabelCode(id);
+      newLabels.push({ id, code });
+    }
+
+    // Agregar a los existentes
+    setLabelCodes(prev => [...prev, ...newLabels]);
+    setBulkQuantity(''); // Limpiar el campo
+
+    showNotification({
+      type: 'success',
+      message: `Se generaron ${quantityToGenerate} rótulos adicionales. Total: ${targetTotal} rótulos.`
+    });
+  };
+
+  // Funciones para manejar fotos
+  const addPhoto = () => {
+    const newId = Math.max(...photos.map(p => p.id), 0) + 1;
+    setPhotos([...photos, { id: newId, file: null, preview: null, uploaded: false }]);
+  };
+
+  const removePhoto = (id) => {
+    setPhotos(photos.filter(photo => photo.id !== id));
+  };
+
+  const handlePhotoChange = (photoId, event) => {
     const file = event.target.files[0];
     if (!file) return;
 
@@ -81,36 +201,28 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
     // Crear preview
     const reader = new FileReader();
     reader.onload = (e) => {
-      setBagLabels(prev => 
-        prev.map(label => 
-          label.bagNumber === bagNumber
-            ? { ...label, photo: file, preview: e.target.result }
-            : label
+      setPhotos(prev => 
+        prev.map(photo => 
+          photo.id === photoId
+            ? { ...photo, file: file, preview: e.target.result, uploaded: false }
+            : photo
         )
       );
     };
     reader.readAsDataURL(file);
   };
 
-  const removePhoto = (bagNumber) => {
-    setBagLabels(prev => 
-      prev.map(label => 
-        label.bagNumber === bagNumber
-          ? { ...label, photo: null, preview: null }
-          : label
-      )
-    );
-  };
-
-  const allPhotosUploaded = () => {
-    return bagLabels.every(label => label.photo !== null);
+  const allRequiredFieldsFilled = () => {
+    // Al menos un código de rótulo no vacío
+    const hasValidCodes = labelCodes.some(label => label.code.trim() !== '');
+    return hasValidCodes;
   };
 
   const handleSubmit = async () => {
-    if (!allPhotosUploaded()) {
+    if (!allRequiredFieldsFilled()) {
       showNotification({
         type: 'error',
-        message: 'Debe subir una imagen para cada bolsa'
+        message: 'Debe completar al menos un código de rótulo'
       });
       return;
     }
@@ -123,7 +235,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
       
       try {
         // Extraer solo los archivos File de las fotos
-        const photoFiles = bagLabels.map(label => label.photo).filter(photo => photo instanceof File);
+        const photoFiles = photos.map(photo => photo.file).filter(file => file instanceof File);
         
         if (photoFiles.length > 0) {
           // Subir fotos usando el mismo endpoint que el formulario de recogida
@@ -133,20 +245,20 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
             // Actualizar estado del servicio a LABELED
             const statusResponse = await serviceService.updateServiceStatus(service.id, {
               status: 'LABELED',
-              internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}`
+              internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}`
             });
             
             if (statusResponse.success) {
               apiSuccess = true;
               
               // Guardar información de rótulos en storage local para referencia (SIN IMÁGENES)
-              for (const label of bagLabels) {
+              labelCodes.forEach((label, index) => {
                 const labelData = {
-                  id: `label-${service.id}-${label.bagNumber}`,
+                  id: `label-${service.id}-${label.id}`,
                   serviceId: service.id,
                   hotelId: service.hotel?.id || service.hotelId,
-                  bagNumber: label.bagNumber,
-                  label: label.labelCode,
+                  bagNumber: index + 1,
+                  label: label.code,
                   photo: null, // No guardar imagen cuando se subió al servidor
                   registeredById: user.id,
                   timestamp: new Date().toISOString(),
@@ -155,8 +267,36 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
                 };
                 
                 bagLabelStorage.addBagLabel(labelData);
-              }
+              });
             }
+          }
+        } else {
+          // Si no hay fotos, solo actualizar estado con los códigos
+          const statusResponse = await serviceService.updateServiceStatus(service.id, {
+            status: 'LABELED',
+            internalNotes: `Rotulado completado por ${user.name} - ${new Date().toLocaleString()}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}`
+          });
+          
+          if (statusResponse.success) {
+            apiSuccess = true;
+            
+            // Guardar información de rótulos en storage local
+            labelCodes.forEach((label, index) => {
+              const labelData = {
+                id: `label-${service.id}-${label.id}`,
+                serviceId: service.id,
+                hotelId: service.hotel?.id || service.hotelId,
+                bagNumber: index + 1,
+                label: label.code,
+                photo: null,
+                registeredById: user.id,
+                timestamp: new Date().toISOString(),
+                status: 'LABELED',
+                generatedAt: 'LAVANDERIA'
+              };
+              
+              bagLabelStorage.addBagLabel(labelData);
+            });
           }
         }
       } catch (apiError) {
@@ -166,14 +306,14 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
       // Si la API falló, guardar todo localmente
       if (!apiSuccess) {
         // Guardar rótulos en storage local
-        for (const label of bagLabels) {
+        labelCodes.forEach((label, index) => {
           const labelData = {
-            id: `label-${service.id}-${label.bagNumber}`,
+            id: `label-${service.id}-${label.id}`,
             serviceId: service.id,
             hotelId: service.hotel?.id || service.hotelId,
-            bagNumber: label.bagNumber,
-            label: label.labelCode,
-            photo: label.preview, // Guardamos el base64 localmente
+            bagNumber: index + 1,
+            label: label.code,
+            photo: null, // Solo guardar fotos base64 localmente si es absolutamente necesario
             registeredById: user.id,
             timestamp: new Date().toISOString(),
             status: 'LABELED',
@@ -181,7 +321,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
           };
           
           bagLabelStorage.addBagLabel(labelData);
-        }
+        });
 
         // Actualizar estado del servicio localmente
         const services = serviceStorage.getServices();
@@ -191,9 +331,9 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
               ...s,
               status: SERVICE_STATUS.LABELED,
               labeledDate: new Date().toISOString(),
-              labelingPhotos: bagLabels.map(label => label.preview), // Guardar fotos como en pickup
+              labelingPhotos: photos.filter(p => p.preview).map(photo => photo.preview), // Solo previews válidos
               internalNotes: (s.internalNotes || '') + 
-                `\n[${new Date().toLocaleString()}] Rotulado completado por ${user.name}`,
+                `\n[${new Date().toLocaleString()}] Rotulado completado por ${user.name}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}`,
               syncPending: true
             };
           }
@@ -205,7 +345,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
 
       showNotification({
         type: 'success',
-        message: `Rotulado completado exitosamente para ${service.guestName}. ${service.bagCount} bolsas rotuladas.`
+        message: `Rotulado completado exitosamente para ${service.guestName}. ${labelCodes.length} rótulo${labelCodes.length !== 1 ? 's' : ''} registrado${labelCodes.length !== 1 ? 's' : ''}.`
       });
 
       // Notificar cambios y cerrar
@@ -242,10 +382,10 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
                 <span>•</span>
                 <span>Hab. {service.roomNumber}</span>
               </div>
-              {viewMode && (
+              {(viewMode || existingDbLabels.length > 0) && (
                 <div className="mt-2 flex items-center space-x-2 text-sm text-green-600">
                   <CheckCircle className="h-4 w-4" />
-                  <span>Rotulado completado</span>
+                  <span>Rotulado completado ({existingDbLabels.length} rótulos en base de datos)</span>
                 </div>
               )}
             </div>
@@ -315,87 +455,192 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
             </Card.Content>
           </Card>
 
-          {/* Bag Labeling Section */}
+          {/* Label Codes Section */}
+          <Card className="mb-6">
+            <Card.Header>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h4 className="font-medium text-gray-900">
+                    Códigos de Rótulos
+                  </h4>
+                  <p className="text-sm text-gray-600">
+                    {viewMode ? 'Códigos de rótulos registrados' : 'Agregue los códigos de rótulos necesarios'}
+                  </p>
+                </div>
+                
+                {!viewMode && existingDbLabels.length === 0 && (
+                  <div className="flex items-center space-x-2 bg-blue-50 p-3 rounded-lg">
+                    <label className="text-sm font-medium text-blue-900 whitespace-nowrap">
+                      Generar automático:
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={bulkQuantity}
+                      onChange={(e) => setBulkQuantity(e.target.value)}
+                      placeholder="25"
+                      className="w-20 px-2 py-1 border border-blue-300 rounded text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={generateBulkLabels}
+                      disabled={!bulkQuantity || parseInt(bulkQuantity) < 1}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      Completar a {bulkQuantity || 'X'} rótulos
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Card.Header>
+            <Card.Content className="p-4">
+              <div className="space-y-3">
+                {labelCodes.map((label, index) => (
+                  <div key={label.id} className="flex items-center space-x-3">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={label.code}
+                        onChange={(e) => updateLabelCode(label.id, e.target.value)}
+                        disabled={viewMode || existingDbLabels.length > 0}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+                        placeholder="Código del rótulo"
+                      />
+                    </div>
+                    {!viewMode && labelCodes.length > 1 && (
+                      <button
+                        onClick={() => removeLabelCode(label.id)}
+                        className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        title="Eliminar este rótulo"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                
+                {!viewMode && labelCodes.length > 0 && (
+                  <div className="pt-2 border-t border-gray-200">
+                    <button
+                      onClick={addLabelCode}
+                      className="w-full px-4 py-2 border-2 border-dashed border-green-300 rounded-md text-green-600 hover:border-green-400 hover:text-green-700 hover:bg-green-50 transition-colors flex items-center justify-center"
+                    >
+                      + Agregar otro código de rótulo
+                    </button>
+                  </div>
+                )}
+                
+                {!viewMode && labelCodes.length === 0 && (
+                  <button
+                    onClick={addLabelCode}
+                    className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-md text-gray-500 hover:border-gray-400 hover:text-gray-700"
+                  >
+                    + Agregar primer rótulo
+                  </button>
+                )}
+              </div>
+            </Card.Content>
+          </Card>
+
+          {/* Photos Section */}
           <Card className="mb-6">
             <Card.Header>
               <h4 className="font-medium text-gray-900">
-                {viewMode ? 'Rótulos Registrados' : `Subir Imágenes de Rótulos (${bagLabels.filter(l => l.photo).length}/${service.bagCount})`}
+                Fotos de Rótulos {!viewMode && `(${photos.filter(p => p.preview).length})`}
               </h4>
               <p className="text-sm text-gray-600">
-                {viewMode ? 'Imágenes de los rótulos físicos de cada bolsa' : 'Suba una imagen del rótulo físico para cada bolsa'}
+                {viewMode ? 'Fotos de los rótulos físicos' : 'Suba fotos de los rótulos (opcional)'}
               </p>
             </Card.Header>
             <Card.Content className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {bagLabels.map((label) => (
-                  <div key={label.bagNumber} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-center mb-3">
-                      <h5 className="font-medium text-gray-900">
-                        Bolsa {label.bagNumber}
-                      </h5>
-                      <Tag className="h-4 w-4 text-gray-400" />
+              {photos.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {photos.map((photo) => (
+                    <div key={photo.id} className="relative">
+                      {photo.preview ? (
+                        <div className="relative">
+                          <img 
+                            src={photo.preview} 
+                            alt={`Foto de rótulo`}
+                            className="w-full h-32 object-cover rounded border"
+                          />
+                          {!viewMode && (
+                            <>
+                              <button
+                                onClick={() => removePhoto(photo.id)}
+                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={addPhoto}
+                                className="absolute bottom-1 right-1 bg-green-500 text-white rounded-full p-1 hover:bg-green-600"
+                              >
+                                +
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        !viewMode && (
+                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors h-32 flex flex-col justify-center">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handlePhotoChange(photo.id, e)}
+                              className="hidden"
+                              id={`photo-${photo.id}`}
+                            />
+                            <label 
+                              htmlFor={`photo-${photo.id}`}
+                              className="cursor-pointer"
+                            >
+                              <Camera className="h-6 w-6 text-gray-400 mx-auto mb-1" />
+                              <p className="text-xs text-gray-600">
+                                Subir foto
+                              </p>
+                            </label>
+                          </div>
+                        )
+                      )}
                     </div>
-                    
-                    <div className="text-xs text-gray-600 mb-3 font-mono bg-gray-50 p-2 rounded">
-                      {label.labelCode}
-                    </div>
-
-                    {label.preview ? (
-                      <div className="relative">
-                        <img 
-                          src={label.preview} 
-                          alt={`Rótulo bolsa ${label.bagNumber}`}
-                          className="w-full h-32 object-cover rounded border"
-                        />
-                        {!viewMode && (
-                          <button
-                            onClick={() => removePhoto(label.bagNumber)}
-                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-                    ) : (!viewMode && (
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handlePhotoChange(label.bagNumber, e)}
-                          className="hidden"
-                          id={`photo-${label.bagNumber}`}
-                        />
-                        <label 
-                          htmlFor={`photo-${label.bagNumber}`}
-                          className="cursor-pointer"
-                        >
-                          <Camera className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                          <p className="text-sm text-gray-600">
-                            Subir imagen
-                          </p>
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                !viewMode && (
+                  <button
+                    onClick={addPhoto}
+                    className="w-full px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-gray-400 hover:text-gray-700 flex flex-col items-center"
+                  >
+                    <Camera className="h-8 w-8 mb-2" />
+                    <span>+ Agregar primera foto</span>
+                  </button>
+                )
+              )}
             </Card.Content>
           </Card>
 
           {/* Action Buttons */}
           <div className="flex space-x-4">
-            {viewMode ? (
-              <Button
-                onClick={onClose}
-                className="flex-1"
-              >
-                Cerrar
-              </Button>
+            {(viewMode || existingDbLabels.length > 0) ? (
+              <div className="flex-1">
+                <Button
+                  onClick={onClose}
+                  className="w-full"
+                >
+                  Cerrar
+                </Button>
+                {existingDbLabels.length > 0 && (
+                  <div className="mt-2 text-center text-sm text-gray-600">
+                    {existingDbLabels.length} rótulo{existingDbLabels.length !== 1 ? 's' : ''} guardado{existingDbLabels.length !== 1 ? 's' : ''} en la base de datos
+                  </div>
+                )}
+              </div>
             ) : (
               <>
                 <Button
                   onClick={handleSubmit}
-                  disabled={!allPhotosUploaded() || submitting}
+                  disabled={!allRequiredFieldsFilled() || submitting}
                   loading={submitting}
                   className="flex-1"
                 >
