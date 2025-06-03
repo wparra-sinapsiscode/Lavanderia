@@ -55,7 +55,11 @@ export const getStatusColor = (status) => {
     entrega_parcial: 'bg-orange-100 text-orange-800',
     entrega_total: 'bg-emerald-100 text-emerald-800',
     completado: 'bg-green-100 text-green-800',
-    cancelado: 'bg-gray-100 text-gray-800'
+    cancelado: 'bg-gray-100 text-gray-800',
+    // Estados de entrega simplificados
+    'READY_FOR_DELIVERY': 'bg-amber-100 text-amber-800',
+    'ASSIGNED_TO_ROUTE': 'bg-blue-100 text-blue-800',
+    'COMPLETED': 'bg-green-100 text-green-800'
   };
   return colors[status] || 'bg-gray-100 text-gray-800';
 };
@@ -75,7 +79,11 @@ export const getStatusText = (status) => {
     entrega_parcial: 'Entrega Parcial',
     entrega_total: 'Entrega Total',
     completado: 'Completado',
-    cancelado: 'Cancelado'
+    cancelado: 'Cancelado',
+    // Estados de entrega simplificados
+    'READY_FOR_DELIVERY': 'Esperando',
+    'ASSIGNED_TO_ROUTE': 'Ruta Asignada',
+    'COMPLETED': 'Completado'
   };
   return texts[status] || status;
 };
@@ -177,7 +185,7 @@ export const getPickupStats = (services, repartidorId = null) => {
 
 // Auto-assign repartidor based on hotel zone
 export const assignRepartidorByZone = (hotel, users) => {
-  if (!hotel || !hotel.zone || !users) {
+  if (!users || !Array.isArray(users)) {
     return null;
   }
 
@@ -188,11 +196,22 @@ export const assignRepartidorByZone = (hotel, users) => {
     return null;
   }
 
-  // Find repartidor that matches the hotel's zone
-  const assignedRepartidor = repartidores.find(rep => rep.zone === hotel.zone);
+  // Get hotel zone
+  let hotelZone = null;
+  if (typeof hotel === 'object' && hotel?.zone) {
+    hotelZone = hotel.zone;
+  }
+
+  // If we have a zone, try to find a matching repartidor
+  if (hotelZone) {
+    const assignedRepartidor = repartidores.find(rep => rep.zone === hotelZone);
+    if (assignedRepartidor) {
+      return assignedRepartidor;
+    }
+  }
   
-  // If no exact match, assign the first available repartidor
-  return assignedRepartidor || repartidores[0];
+  // If no exact match or no zone, assign the first available repartidor
+  return repartidores[0];
 };
 
 // Get automatic priority based on observations

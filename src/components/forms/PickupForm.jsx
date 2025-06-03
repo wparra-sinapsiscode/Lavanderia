@@ -5,6 +5,7 @@ import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
 import { serviceStorage, hotelStorage, auditStorage } from '../../utils/storage';
 import { calculateServicePrice, convertToBase64 } from '../../utils';
+import { createPickupTransaction } from '../../utils/financialMigration';
 import serviceService from '../../services/service.service';
 import hotelService from '../../services/hotel.service';
 import routeService from '../../services/route.service';
@@ -374,7 +375,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
             serviceId,
             photos: photos.map(p => p.file),
             signature: null, // Firma removida del formulario
-            serviceStatus: 'PENDING_PICKUP', // Mantener estado hasta confirmación manual
+            serviceStatus: 'PICKED_UP', // Cambiar estado automáticamente como en gestión de servicios
             price
           };
           
@@ -426,7 +427,7 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           pickupDate: new Date().toISOString(),
           collectorName: data.collectorName,
           status: 'PICKED_UP', // Cambiar automáticamente al completar recogida
-          photos,
+          photos: photos, // Mantener las fotos como están para futura migración
           geolocation: geoLocation,
           repartidor: user.name,
           repartidorId: user.id,
@@ -460,6 +461,17 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           type: 'success',
           message: `Datos de recogida registrados para ${service.guestName}. ${finalBagCount} bolsas, ${weight}kg. Precio: S/${price.toFixed(2)}${usedLocalStorage ? ' (guardado localmente)' : ''}`
         });
+
+        // Crear transacción financiera automáticamente (NUEVA FUNCIONALIDAD)
+        if (price > 0) {
+          try {
+            await createPickupTransaction(updatedService || service, hotel, price);
+            console.log('Transacción financiera creada automáticamente');
+          } catch (transactionError) {
+            console.warn('No se pudo crear la transacción financiera:', transactionError);
+            // No mostrar error al usuario para no interrumpir el flujo
+          }
+        }
 
         // Show redirect to labels option
         setShowRedirectToLabels(true);

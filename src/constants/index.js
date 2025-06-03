@@ -184,6 +184,33 @@ export const SERVICE_STATUS_CONFIG = {
     textColor: 'text-red-800',
     borderColor: 'border-red-300',
     badgeClasses: 'bg-red-100 text-red-800 border border-red-300'
+  },
+  READY_FOR_DELIVERY: {
+    label: 'Listo para Entrega',
+    action: 'Listo para Entrega',
+    color: 'cyan',
+    bgColor: 'bg-cyan-100',
+    textColor: 'text-cyan-800',
+    borderColor: 'border-cyan-300',
+    badgeClasses: 'bg-cyan-100 text-cyan-800 border border-cyan-300'
+  },
+  OUT_FOR_DELIVERY: {
+    label: 'En Entrega',
+    action: 'En Entrega',
+    color: 'violet',
+    bgColor: 'bg-violet-100',
+    textColor: 'text-violet-800',
+    borderColor: 'border-violet-300',
+    badgeClasses: 'bg-violet-100 text-violet-800 border border-violet-300'
+  },
+  DELIVERED: {
+    label: 'Entregado',
+    action: 'Entregado',
+    color: 'emerald',
+    bgColor: 'bg-emerald-100',
+    textColor: 'text-emerald-800',
+    borderColor: 'border-emerald-300',
+    badgeClasses: 'bg-emerald-100 text-emerald-800 border border-emerald-300'
   }
 };
 
@@ -197,5 +224,7 @@ export const SERVICE_STATUS = {
   PARTIAL_DELIVERY: 'PARTIAL_DELIVERY',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
-  READY_FOR_DELIVERY: 'READY_FOR_DELIVERY'
+  READY_FOR_DELIVERY: 'READY_FOR_DELIVERY',
+  OUT_FOR_DELIVERY: 'OUT_FOR_DELIVERY',
+  DELIVERED: 'DELIVERED'
 };

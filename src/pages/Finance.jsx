@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import TransactionForm from '../components/forms/TransactionForm';
 import FinanceCalculator from '../components/ui/FinanceCalculator';
+import FinancialMigrationTool from '../components/ui/FinancialMigrationTool';
 import { 
   DollarSign, 
   Plus, 

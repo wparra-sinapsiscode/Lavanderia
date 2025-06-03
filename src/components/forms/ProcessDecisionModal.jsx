@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { serviceStorage } from '../../utils/storage';
+import { serviceStorage, storage } from '../../utils/storage';
 import { SERVICE_STATUS } from '../../types';
+import { APP_CONFIG } from '../../constants';
 import { useNotifications } from '../../store/NotificationContext';
-import { getStatusText } from '../../utils';
+import { getStatusText, assignRepartidorByZone } from '../../utils';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import { CheckCircle, Package, X } from 'lucide-react';
@@ -59,6 +60,8 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const handleComplete = () => {
+    // Crear servicio de entrega y completar el actual
+    createDeliveryService(service.bagCount, 'COMPLETE');
     updateServiceStatus(SERVICE_STATUS.COMPLETED);
   };
 
@@ -67,7 +70,82 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       alert('Debes seleccionar al menos una bolsa para entrega parcial');
       return;
     }
+    // Crear servicio de entrega para las bolsas entregadas
+    const deliveredBags = selectedBags.filter(bag => bag.delivered);
+    createDeliveryService(deliveredBags.length, 'PARTIAL');
     updateServiceStatus(SERVICE_STATUS.PARTIAL_DELIVERY);
+  };
+
+  const createDeliveryService = (bagCount, deliveryType) => {
+    const services = serviceStorage.getServices();
+    const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
+    
+    // Asignar repartidor automáticamente por zona del hotel
+    const assignedRepartidor = assignRepartidorByZone(service.hotel, users);
+    
+    // Generar ID único para el servicio de entrega
+    const deliveryServiceId = `delivery-${service.id}-${Date.now()}`;
+    
+    // Crear el nuevo servicio de entrega
+    const deliveryService = {
+      id: deliveryServiceId,
+      // Información del cliente (igual que el servicio original)
+      guestName: service.guestName,
+      roomNumber: service.roomNumber,
+      hotel: service.hotel,
+      hotelId: service.hotelId,
+      
+      // Información de entrega
+      bagCount: bagCount,
+      weight: deliveryType === 'COMPLETE' ? service.weight : (service.weight * (bagCount / service.bagCount)).toFixed(1),
+      
+      // Información de proceso
+      observations: `Servicio de entrega - ${deliveryType === 'COMPLETE' ? 'Completa' : 'Parcial'} | Servicio origen: ${service.id}`,
+      specialInstructions: service.specialInstructions || '',
+      priority: service.priority || 'NORMAL',
+      
+      // Fechas
+      pickupDate: service.deliveryDate || new Date().toISOString(), // Fecha de "recogida" desde lavandería
+      estimatedPickupDate: new Date().toISOString(),
+      labeledDate: new Date().toISOString(), // Ya está procesado
+      deliveryDate: null,
+      estimatedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // +2 días
+      
+      // Estado inicial del servicio de entrega
+      status: 'READY_FOR_DELIVERY',
+      
+      // Datos del servicio de entrega
+      photos: service.labelingPhotos || [], // Fotos de los rótulos como referencia
+      signature: null,
+      collectorName: null, // Se llenará cuando alguien recoja
+      geolocation: null,
+      repartidorId: assignedRepartidor?.id || null,
+      deliveryRepartidorId: assignedRepartidor?.id || null,
+      deliveryRepartidor: assignedRepartidor?.name || null,
+      
+      // Información adicional
+      partialDeliveryPercentage: deliveryType === 'PARTIAL' ? partialPercentage : 100,
+      price: service.price || null,
+      pickupTimeSlot: null,
+      customerNotes: `Entrega de servicio de lavandería procesado`,
+      internalNotes: `[${new Date().toLocaleString('es-PE')}] Servicio de entrega creado automáticamente desde ${service.id} | Tipo: ${deliveryType} | Bolsas: ${bagCount}/${service.bagCount}`,
+      
+      // Campos específicos de entrega
+      originalServiceId: service.id, // Referencia al servicio original
+      serviceType: 'DELIVERY', // Tipo de servicio
+      isDeliveryService: true, // Flag para identificar servicios de entrega
+      
+      // Metadatos
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timestamp: new Date().toISOString()
+    };
+    
+    // Agregar el servicio de entrega a la lista
+    const updatedServices = [...services, deliveryService];
+    serviceStorage.setServices(updatedServices);
+    
+    console.log(`✅ Servicio de entrega creado: ${deliveryServiceId}`);
   };
 
   const updateServiceStatus = (newStatus) => {

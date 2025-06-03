@@ -14,6 +14,14 @@ import { Truck, Clock, Package, MapPin, RefreshCw, UserCheck, GitBranch, CheckCi
 
 const Delivery = () => {
   const { user, isAdmin, isRepartidor } = useAuth();
+  
+  // Helper function to get hotel name from hotel object or string
+  const getHotelName = (hotel) => {
+    if (typeof hotel === 'object' && hotel?.name) {
+      return hotel.name;
+    }
+    return hotel || 'No especificado';
+  };
   const { success, error } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
@@ -51,7 +59,7 @@ const Delivery = () => {
       
       if (preSelectedService) {
         setSelectedService(preSelectedService);
-        success('Servicio Pre-seleccionado', `Entrega para ${preSelectedService.guestName} en ${preSelectedService.hotel}`);
+        success('Servicio Pre-seleccionado', `Entrega para ${preSelectedService.guestName} en ${getHotelName(preSelectedService.hotel)}`);
       }
     }
   }, [location.state]);
@@ -65,10 +73,17 @@ const Delivery = () => {
     const repartidoresList = allUsers.filter(u => u.role === 'repartidor');
     setRepartidores(repartidoresList);
     
-    // Filter services ready for delivery (solo entrega parcial y completado)
+    // Filter services ready for delivery 
+    // Incluye: servicios parciales/completados del flujo original + servicios de entrega nuevos
     let ready = services.filter(s => 
+      // Servicios del flujo original (entrega parcial y completados que aún no se han entregado físicamente)
       s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-      s.status === SERVICE_STATUS.COMPLETED
+      s.status === SERVICE_STATUS.COMPLETED ||
+      // Servicios de entrega nuevos con estados simplificados
+      s.status === 'READY_FOR_DELIVERY' ||
+      s.status === 'ASSIGNED_TO_ROUTE' ||
+      s.status === 'OUT_FOR_DELIVERY' || // Mantenemos por compatibilidad
+      s.isDeliveryService === true // Flag adicional para identificar servicios de entrega
     );
 
     // For repartidores, show only their assigned deliveries
@@ -85,7 +100,9 @@ const Delivery = () => {
     // Calculate stats
     const readyForDelivery = ready.filter(s => 
       s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-      s.status === SERVICE_STATUS.COMPLETED
+      s.status === SERVICE_STATUS.COMPLETED ||
+      s.status === 'READY_FOR_DELIVERY' ||
+      s.status === 'ASSIGNED_TO_ROUTE'
     ).length;
     const myDeliveries = services.filter(s => s.deliveryRepartidorId === user.id).length;
     const today = new Date().toDateString();
@@ -214,6 +231,31 @@ const Delivery = () => {
     success(
       'Entrega Asignada',
       `Entrega asignada a ${selectedRepartidor.name} (Zona ${selectedRepartidor.zone}). Aparecerá en rutas al generar ruta.`
+    );
+  };
+
+  const handleStartDelivery = (service) => {
+    // Cambiar estado a ASSIGNED_TO_ROUTE cuando el repartidor inicia la entrega
+    const services = serviceStorage.getServices();
+    const updatedServices = services.map(s => {
+      if (s.id === service.id) {
+        return {
+          ...s,
+          status: 'ASSIGNED_TO_ROUTE',
+          routeStartTime: new Date().toISOString(),
+          internalNotes: (s.internalNotes || '') + 
+            ` | Entrega iniciada por ${user.name} - ${new Date().toLocaleString('es-PE')}`
+        };
+      }
+      return s;
+    });
+    
+    serviceStorage.setServices(updatedServices);
+    loadDeliveryData();
+    
+    success(
+      'Entrega Iniciada',
+      `Has iniciado la ruta de entrega para ${service.guestName}`
     );
   };
 
@@ -377,7 +419,7 @@ const Delivery = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {service.hotel}
+                        {getHotelName(service.hotel)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
@@ -441,37 +483,68 @@ const Delivery = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
-                          {service.status === SERVICE_STATUS.PARTIAL_DELIVERY ? (
-                            isRepartidor && service.deliveryRepartidorId === user.id ? (
-                              <Button
-                                size="sm"
-                                onClick={() => setSelectedService(service)}
-                                variant="outline"
-                              >
-                                <Truck className="h-4 w-4 mr-1" />
-                                Continuar Entrega
-                              </Button>
-                            ) : (
-                              <div className="flex items-center text-orange-600">
-                                <Package className="h-4 w-4 mr-1" />
-                                <span>Entrega Parcial</span>
-                              </div>
-                            )
-                          ) : service.status === SERVICE_STATUS.COMPLETED ? (
+                          {/* Estado: READY_FOR_DELIVERY */}
+                          {service.status === 'READY_FOR_DELIVERY' && (
+                            <>
+                              {isRepartidor && service.deliveryRepartidorId === user.id ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleStartDelivery(service)}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                  <Truck className="h-4 w-4 mr-1" />
+                                  Iniciar Entrega
+                                </Button>
+                              ) : isAdmin && !service.deliveryRepartidorId ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleReassignService(service)}
+                                  className="text-xs"
+                                >
+                                  Asignar Entregador
+                                </Button>
+                              ) : (
+                                <span className="text-amber-600">Esperando</span>
+                              )}
+                            </>
+                          )}
+                          
+                          {/* Estado: ASSIGNED_TO_ROUTE */}
+                          {service.status === 'ASSIGNED_TO_ROUTE' && (
+                            <>
+                              {isRepartidor && service.deliveryRepartidorId === user.id ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => setSelectedService(service)}
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  <Package className="h-4 w-4 mr-1" />
+                                  Entregar
+                                </Button>
+                              ) : (
+                                <div className="flex items-center text-blue-600">
+                                  <Truck className="h-4 w-4 mr-1" />
+                                  <span>En Ruta</span>
+                                </div>
+                              )}
+                            </>
+                          )}
+                          
+                          {/* Estado: COMPLETED */}
+                          {service.status === 'COMPLETED' && (
                             <div className="flex items-center text-green-600">
                               <CheckCircle className="h-4 w-4 mr-1" />
-                              <span>Completado</span>
+                              <span>✓ Entregado</span>
                             </div>
-                          ) : null}
-                          {isAdmin && (service.status === SERVICE_STATUS.PARTIAL_DELIVERY || service.status === SERVICE_STATUS.COMPLETED) && !service.deliveryRepartidorId && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReassignService(service)}
-                              className="text-xs"
-                            >
-                              Asignar para entrega
-                            </Button>
+                          )}
+                          
+                          {/* Estados legacy para compatibilidad */}
+                          {service.status === SERVICE_STATUS.PARTIAL_DELIVERY && (
+                            <div className="flex items-center text-orange-600">
+                              <Package className="h-4 w-4 mr-1" />
+                              <span>Entrega Parcial</span>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -514,7 +587,7 @@ const Delivery = () => {
               </h3>
               <div className="mb-4">
                 <p className="text-sm text-gray-600 mb-2">
-                  <strong>Hotel:</strong> {serviceToReassign.hotel}
+                  <strong>Hotel:</strong> {getHotelName(serviceToReassign.hotel)}
                 </p>
                 <p className="text-sm text-gray-600 mb-2">
                   <strong>Cliente:</strong> {serviceToReassign.guestName}

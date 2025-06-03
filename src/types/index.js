@@ -13,6 +13,10 @@ export const SERVICE_STATUS = {
   IN_PROCESS: 'en_proceso',
   PARTIAL_DELIVERY: 'entrega_parcial',
   COMPLETED: 'completado',
+  // Estados de entrega
+  READY_FOR_DELIVERY: 'listo_entrega',
+  OUT_FOR_DELIVERY: 'en_entrega',
+  DELIVERED: 'entregado',
   // Estados obsoletos mantenidos para compatibilidad
   WASHED: 'lavado', // DEPRECATED
   IRONED: 'planchado', // DEPRECATED  

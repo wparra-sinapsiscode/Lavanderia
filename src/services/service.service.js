@@ -376,7 +376,7 @@ class ServiceService {
       const response = await api.put(`/services/${id}/route-update`, {
         routeId,
         hotelIndex,
-        ...updateData
+        updatedData: updateData
       });
       return response.data;
     } catch (error) {
