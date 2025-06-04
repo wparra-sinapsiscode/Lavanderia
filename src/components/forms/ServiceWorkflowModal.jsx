@@ -353,6 +353,33 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
 
       if (apiResponse && apiResponse.success) {
         console.log('Estado actualizado exitosamente en la API');
+        
+        // TAMBIÉN actualizar en localStorage para mantener sincronización
+        const services = serviceStorage.getServices();
+        const updatedServices = services.map(s => {
+          if (s.id === service.id) {
+            const now = new Date().toISOString();
+            const updatedService = {
+              ...s,
+              status: SERVICE_STATUS.IN_PROCESS,
+              processStartDate: now,
+              updatedAt: now,
+              internalNotes: (s.internalNotes || '') + 
+                ` | Estado actualizado a En Proceso - ${new Date().toLocaleString('es-PE')} | Proceso de lavandería iniciado`
+            };
+
+            console.log('✅ Servicio actualizado TAMBIÉN en localStorage:', {
+              id: updatedService.id,
+              status: updatedService.status,
+              processStartDate: updatedService.processStartDate
+            });
+
+            return updatedService;
+          }
+          return s;
+        });
+
+        serviceStorage.setServices(updatedServices);
       } else {
         throw new Error('Error al actualizar en la API');
       }
@@ -363,13 +390,22 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       const services = serviceStorage.getServices();
       const updatedServices = services.map(s => {
         if (s.id === service.id) {
+          const now = new Date().toISOString();
           const updatedService = {
             ...s,
             status: SERVICE_STATUS.IN_PROCESS,
-            processStartDate: new Date().toISOString(),
+            processStartDate: now,
+            updatedAt: now,
             internalNotes: (s.internalNotes || '') + 
-              ` | Proceso de lavandería iniciado - ${new Date().toLocaleString('es-PE')}`
+              ` | Estado actualizado a En Proceso - ${new Date().toLocaleString('es-PE')} | Proceso de lavandería iniciado`
           };
+
+          console.log('✅ Servicio actualizado a EN_PROCESO:', {
+            id: updatedService.id,
+            status: updatedService.status,
+            processStartDate: updatedService.processStartDate,
+            notes: updatedService.internalNotes
+          });
 
           return updatedService;
         }
@@ -717,22 +753,90 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                       });
                     }
                     
-                    // 5. En proceso
-                    if (service.processStartDate && (service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED')) {
-                      timeline.push({
-                        date: service.processStartDate,
-                        icon: '⚙️',
-                        text: 'Proceso de lavandería iniciado'
+                    // 5. En proceso - mejorar detección
+                    if (service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED') {
+                      // Si hay processStartDate, usar esa fecha
+                      if (service.processStartDate) {
+                        timeline.push({
+                          date: service.processStartDate,
+                          icon: '⚙️',
+                          text: 'Proceso de lavandería iniciado'
+                        });
+                      } else {
+                        // Si no hay processStartDate, buscar en internalNotes
+                        if (service.internalNotes && service.internalNotes.includes('Estado actualizado a En Proceso')) {
+                          const notes = service.internalNotes.split('|');
+                          const processNote = notes.find(note => note.includes('Estado actualizado a En Proceso'));
+                          if (processNote) {
+                            // Extraer fecha del note si es posible
+                            const match = processNote.match(/(\d{1,2}\/\d{1,2}\/\d{4},?\s*\d{1,2}:\d{2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+                            if (match) {
+                              try {
+                                const dateStr = match[1];
+                                const date = new Date(dateStr);
+                                if (!isNaN(date.getTime())) {
+                                  timeline.push({
+                                    date: date.toISOString(),
+                                    icon: '⚙️',
+                                    text: 'Proceso de lavandería iniciado'
+                                  });
+                                }
+                              } catch (e) {
+                                console.warn('Error parsing process date:', e);
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    
+                    // 6. Entregas parciales (extraer del internalNotes)
+                    if (service.internalNotes) {
+                      const notes = service.internalNotes.split('|');
+                      notes.forEach(note => {
+                        const trimmedNote = note.trim();
+                        // Buscar entregas parciales generadas
+                        if (trimmedNote.includes('Entrega parcial generada:')) {
+                          // Extraer información de la entrega parcial
+                          const match = trimmedNote.match(/Entrega parcial generada: (.+?) - (.+)/);
+                          if (match) {
+                            const bags = match[1];
+                            const dateStr = match[2];
+                            try {
+                              // Intentar parsear la fecha
+                              const date = new Date(dateStr);
+                              if (!isNaN(date.getTime())) {
+                                timeline.push({
+                                  date: date.toISOString(),
+                                  icon: '📦',
+                                  text: `Entrega parcial generada: ${bags}`
+                                });
+                              }
+                            } catch (e) {
+                              console.warn('Error parsing date from note:', dateStr);
+                            }
+                          }
+                        }
                       });
                     }
                     
-                    // 6. Entrega
-                    if (service.deliveryDate && (service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED')) {
-                      const deliveryType = service.status === 'PARTIAL_DELIVERY' ? 'parcial' : 'completa';
+                    // 7. Entrega final/completado
+                    if (service.deliveryDate && service.status === 'COMPLETED') {
                       timeline.push({
                         date: service.deliveryDate,
                         icon: '✅',
-                        text: `Entrega ${deliveryType} realizada`
+                        text: 'Servicio completado - todas las bolsas entregadas'
+                      });
+                    }
+                    
+                    // 8. Fecha de entrega parcial (primera)
+                    if (service.partialDeliveryDate && service.status === 'PARTIAL_DELIVERY') {
+                      const deliveredCount = service.deliveredBags ? service.deliveredBags.length : 0;
+                      const percentage = service.partialDeliveryPercentage || 0;
+                      timeline.push({
+                        date: service.partialDeliveryDate,
+                        icon: '🚚',
+                        text: `Estado: Entrega parcial (${deliveredCount}/${service.bagCount} bolsas - ${percentage}%)`
                       });
                     }
                     

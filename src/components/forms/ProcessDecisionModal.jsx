@@ -17,20 +17,58 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   // Initialize bags array when component mounts
   useEffect(() => {
     if (service && service.bagCount > 0) {
-      const bags = Array.from({ length: service.bagCount }, (_, index) => ({
-        id: index + 1,
-        number: `Bolsa ${index + 1}`,
-        delivered: index < bagsToDeliver // Pre-select first half
-      }));
+      // 🔍 CALCULAR BOLSAS YA ENTREGADAS DESDE SERVICIOS HIJOS
+      const services = serviceStorage.getServices();
+      const existingDeliveries = services.filter(s => 
+        s.originalServiceId === service.id && 
+        s.isDeliveryService === true
+      );
+      
+      // Obtener todas las bolsas ya entregadas de servicios hijos
+      const alreadyDeliveredFromChildren = existingDeliveries.flatMap(delivery => 
+        delivery.deliveryBags || []
+      );
+      
+      // Combinar con bolsas del servicio original (si las tiene)
+      const serviceDeliveredBags = service.deliveredBags || [];
+      const allDeliveredBags = [...new Set([...serviceDeliveredBags, ...alreadyDeliveredFromChildren])];
+      
+      console.log('📦 Calculando bolsas entregadas:', {
+        serviceId: service.id,
+        fromService: serviceDeliveredBags,
+        fromChildren: alreadyDeliveredFromChildren,
+        totalDelivered: allDeliveredBags,
+        existingDeliveries: existingDeliveries.length
+      });
+      
+      const bags = Array.from({ length: service.bagCount }, (_, index) => {
+        const bagName = `Bolsa ${index + 1}`;
+        const isAlreadyDelivered = allDeliveredBags.includes(bagName);
+        
+        return {
+          id: index + 1,
+          number: bagName,
+          delivered: false, // No pre-seleccionar ninguna
+          isBlocked: isAlreadyDelivered, // Bloquear las ya entregadas
+          alreadyDelivered: isAlreadyDelivered
+        };
+      });
       setSelectedBags(bags);
+      
+      // Ajustar bagsToDeliver para no incluir bolsas ya entregadas
+      const availableBags = bags.filter(bag => !bag.isBlocked);
+      const newBagsToDeliver = Math.min(Math.ceil(availableBags.length / 2), availableBags.length);
+      setBagsToDeliver(newBagsToDeliver);
     }
-  }, [service, bagsToDeliver]);
+  }, [service, service.deliveredBags]);
 
   // Update percentage when bags selection changes
   useEffect(() => {
     if (selectedBags.length > 0) {
-      const deliveredCount = selectedBags.filter(bag => bag.delivered).length;
-      const percentage = Math.round((deliveredCount / selectedBags.length) * 100);
+      const deliveredCount = selectedBags.filter(bag => bag.delivered && !bag.isBlocked).length;
+      const alreadyDeliveredCount = selectedBags.filter(bag => bag.isBlocked).length;
+      const totalDeliveredCount = deliveredCount + alreadyDeliveredCount;
+      const percentage = Math.round((totalDeliveredCount / selectedBags.length) * 100);
       setPartialPercentage(percentage);
       setBagsToDeliver(deliveredCount);
     }
@@ -39,7 +77,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   const handleBagToggle = (bagId) => {
     setSelectedBags(prev => 
       prev.map(bag => 
-        bag.id === bagId 
+        bag.id === bagId && !bag.isBlocked // Solo permitir toggle si no está bloqueada
           ? { ...bag, delivered: !bag.delivered }
           : bag
       )
@@ -47,16 +85,25 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const handleBagsToDeliverChange = (newCount) => {
-    const count = Math.min(Math.max(0, newCount), service.bagCount);
+    const availableBags = selectedBags.filter(bag => !bag.isBlocked);
+    const count = Math.min(Math.max(0, newCount), availableBags.length);
     setBagsToDeliver(count);
     
-    // Update selected bags based on count
-    setSelectedBags(prev => 
-      prev.map((bag, index) => ({
-        ...bag,
-        delivered: index < count
-      }))
-    );
+    // Update selected bags based on count, but only for available bags
+    setSelectedBags(prev => {
+      let deliveredSoFar = 0;
+      return prev.map((bag) => {
+        if (bag.isBlocked) {
+          return bag; // No cambiar bolsas bloqueadas
+        }
+        if (deliveredSoFar < count) {
+          deliveredSoFar++;
+          return { ...bag, delivered: true };
+        } else {
+          return { ...bag, delivered: false };
+        }
+      });
+    });
   };
 
   const handleComplete = () => {
@@ -84,31 +131,76 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     console.log('🎯 Procesando entrega parcial para:', service.id, 'Bolsas:', bagsToDeliver);
     
     // Crear servicio de entrega para las bolsas entregadas
-    const deliveredBags = selectedBags.filter(bag => bag.delivered);
-    const remainingBags = selectedBags.filter(bag => !bag.delivered);
+    const deliveredBags = selectedBags.filter(bag => bag.delivered && !bag.isBlocked);
+    const remainingBags = selectedBags.filter(bag => !bag.delivered && !bag.isBlocked);
+    const alreadyDelivered = selectedBags.filter(bag => bag.isBlocked);
     
     // Crear el servicio de entrega con las bolsas seleccionadas
     createDeliveryService(deliveredBags.length, 'PARTIAL', deliveredBags);
     
-    // Actualizar el servicio original con información de entrega parcial
-    updateServiceStatus(SERVICE_STATUS.PARTIAL_DELIVERY, {
-      deliveredBags: deliveredBags.map(bag => bag.number),
-      remainingBags: remainingBags.map(bag => bag.number),
-      partialDeliveryPercentage: partialPercentage
-    });
+    // Verificar si todas las bolsas han sido entregadas después de esta entrega
+    const totalDeliveredAfterThis = alreadyDelivered.length + deliveredBags.length;
+    const willBeCompleted = totalDeliveredAfterThis >= service.bagCount;
     
-    success(
-      'Entrega Parcial Procesada',
-      `Se creó servicio de entrega para ${bagsToDeliver} de ${service.bagCount} bolsas (${partialPercentage}%). El servicio continúa activo para las ${remainingBags.length} bolsas restantes.`
-    );
+    if (willBeCompleted) {
+      // Si todas las bolsas ya fueron entregadas, marcar como completado
+      updateServiceStatus(SERVICE_STATUS.COMPLETED, {
+        deliveredBags: [...alreadyDelivered.map(bag => bag.number), ...deliveredBags.map(bag => bag.number)],
+        remainingBags: [],
+        partialDeliveryPercentage: 100
+      });
+      
+      success(
+        'Servicio Completado',
+        `Se creó la última entrega para ${bagsToDeliver} bolsas. ¡Todas las ${service.bagCount} bolsas han sido entregadas! El servicio está completado.`
+      );
+    } else {
+      // Actualizar el servicio original con información de entrega parcial
+      const statusUpdated = updateServiceStatus(SERVICE_STATUS.PARTIAL_DELIVERY, {
+        deliveredBags: [...alreadyDelivered.map(bag => bag.number), ...deliveredBags.map(bag => bag.number)],
+        remainingBags: remainingBags.map(bag => bag.number),
+        partialDeliveryPercentage: Math.round((totalDeliveredAfterThis / service.bagCount) * 100)
+      });
+      
+      if (statusUpdated) {
+        success(
+          'Entrega Parcial Procesada',
+          `Se creó servicio de entrega para ${bagsToDeliver} bolsas. El servicio cambió a estado ENTREGA PARCIAL. Quedan ${remainingBags.length} bolsas pendientes.`
+        );
+      } else {
+        error('Error', 'No se pudo actualizar el estado del servicio');
+        return;
+      }
+    }
     
-    onStatusUpdated();
-    onClose();
+    // Esperar un momento antes de cerrar para que se procesen los cambios
+    setTimeout(() => {
+      console.log('🔄 Notificando actualización de estado...');
+      onStatusUpdated();
+      onClose();
+    }, 200); // Más tiempo para asegurar que se procese
   };
 
   const createDeliveryService = (bagCount, deliveryType, selectedBagsData = []) => {
     const services = serviceStorage.getServices();
     const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
+    
+    // 🔍 VALIDAR SERVICIOS DE ENTREGA EXISTENTES
+    const existingDeliveries = services.filter(s => 
+      s.originalServiceId === service.id && 
+      s.isDeliveryService === true
+    );
+    
+    console.log('🔍 Validando servicios de entrega existentes:', {
+      serviceId: service.id,
+      existingDeliveries: existingDeliveries.length,
+      deliveries: existingDeliveries.map(d => ({
+        id: d.id,
+        bagCount: d.bagCount,
+        deliveryBags: d.deliveryBags,
+        status: d.status
+      }))
+    });
     
     // Asignar repartidor automáticamente por zona del hotel
     const assignedRepartidor = assignRepartidorByZone(service.hotel, users);
@@ -213,34 +305,93 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const updateServiceStatus = (newStatus, additionalData = {}) => {
+    console.log('🔄 Actualizando estado del servicio:', {
+      serviceId: service.id,
+      fromStatus: service.status,
+      toStatus: newStatus,
+      additionalData
+    });
+
     const services = serviceStorage.getServices();
+    
+    // Verificar si el servicio existe en localStorage
+    const serviceExists = services.find(s => s.id === service.id);
+    if (!serviceExists) {
+      console.warn('⚠️ Servicio no encontrado en localStorage, agregándolo:', service.id);
+      // Agregar el servicio si no existe
+      services.push(service);
+    }
+    
     const updatedServices = services.map(s => {
       if (s.id === service.id) {
         const updatedService = {
           ...s,
           status: newStatus,
+          updatedAt: new Date().toISOString(),
           internalNotes: (s.internalNotes || '') + 
             ` | Estado actualizado a ${getStatusText(newStatus)} - ${new Date().toLocaleString('es-PE')}`
         };
+        
+        console.log('🔧 Actualizando servicio individual:', {
+          serviceId: s.id,
+          oldStatus: s.status,
+          newStatus: newStatus,
+          statusString: typeof newStatus
+        });
 
         // Handle partial delivery with bag details
         if (newStatus === SERVICE_STATUS.PARTIAL_DELIVERY) {
           const deliveredBags = additionalData.deliveredBags || selectedBags.filter(bag => bag.delivered).map(bag => bag.number);
           const remainingBags = additionalData.remainingBags || selectedBags.filter(bag => !bag.delivered).map(bag => bag.number);
           
-          updatedService.partialDeliveryPercentage = additionalData.partialDeliveryPercentage || partialPercentage;
+          // Usar directamente las bolsas proporcionadas (ya incluyen todas las entregadas hasta ahora)
+          updatedService.partialDeliveryPercentage = additionalData.partialDeliveryPercentage || Math.round((deliveredBags.length / service.bagCount) * 100);
           updatedService.deliveredBags = deliveredBags;
           updatedService.remainingBags = remainingBags;
-          updatedService.internalNotes += ` | Entrega parcial: ${deliveredBags.length}/${service.bagCount} bolsas (${updatedService.partialDeliveryPercentage}%) | Entregadas: ${deliveredBags.join(', ')}`;
+          
+          // Calcular qué bolsas se están entregando AHORA (no todas las entregadas)
+          const previouslyDelivered = s.deliveredBags || [];
+          const newlyDeliveredBags = deliveredBags.filter(bag => !previouslyDelivered.includes(bag));
+          
+          // Agregar registro de esta entrega parcial específica al historial  
+          const deliveryRecord = `Entrega parcial generada: ${newlyDeliveredBags.join(', ')} - ${new Date().toLocaleString('es-PE')}`;
+          updatedService.internalNotes += ` | ${deliveryRecord}`;
+          
+          console.log('📦 Entrega parcial procesada:', {
+            previouslyDelivered,
+            newlyDelivered: newlyDeliveredBags,
+            allDelivered: deliveredBags,
+            remaining: remainingBags,
+            percentage: updatedService.partialDeliveryPercentage
+          });
         }
 
         // Add timestamps for specific statuses
         const now = new Date().toISOString();
         if (newStatus === SERVICE_STATUS.COMPLETED) {
           updatedService.deliveryDate = now;
+          updatedService.internalNotes += ` | Servicio completado - todas las bolsas entregadas`;
         } else if (newStatus === SERVICE_STATUS.PARTIAL_DELIVERY) {
-          updatedService.partialDeliveryDate = now;
+          if (!updatedService.partialDeliveryDate) {
+            updatedService.partialDeliveryDate = now; // Solo la primera vez
+          }
+          console.log('📅 Agregando fecha de entrega parcial:', now);
         }
+        
+        console.log('💾 Servicio antes de guardar:', {
+          id: updatedService.id,
+          status: updatedService.status,
+          partialDeliveryDate: updatedService.partialDeliveryDate,
+          deliveredBags: updatedService.deliveredBags,
+          internalNotes: updatedService.internalNotes
+        });
+
+        console.log('✅ Servicio actualizado:', {
+          id: updatedService.id,
+          status: updatedService.status,
+          deliveredBags: updatedService.deliveredBags,
+          remainingBags: updatedService.remainingBags
+        });
 
         return updatedService;
       }
@@ -248,6 +399,35 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     });
 
     serviceStorage.setServices(updatedServices);
+    
+    const verifyUpdate = updatedServices.find(s => s.id === service.id);
+    console.log('✅ Estado actualizado en localStorage:', {
+      totalServices: updatedServices.length,
+      serviceFound: !!verifyUpdate,
+      updatedService: verifyUpdate?.status,
+      updatedServiceId: verifyUpdate?.id,
+      deliveredBags: verifyUpdate?.deliveredBags,
+      savedSuccessfully: true
+    });
+    
+    // También actualizar en la API si es posible
+    try {
+      if (window.serviceService && window.serviceService.updateServiceStatus) {
+        window.serviceService.updateServiceStatus(service.id, {
+          status: newStatus,
+          internalNotes: verifyUpdate?.internalNotes
+        }).then(response => {
+          console.log('🌐 Estado también actualizado en API:', response);
+        }).catch(err => {
+          console.warn('⚠️ No se pudo actualizar en API:', err);
+        });
+      }
+    } catch (e) {
+      console.warn('⚠️ API no disponible:', e);
+    }
+    
+    // Retornar éxito
+    return true;
   };
 
   return (
@@ -349,7 +529,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
                       disabled={bagsToDeliver === 0}
                       className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
                     >
-                      Entrega Parcial
+                      {selectedBags.some(b => b.isBlocked) ? 'Continuar Entrega Parcial' : 'Entrega Parcial'}
                     </Button>
                   </div>
 
@@ -363,14 +543,19 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
                         <input
                           type="number"
                           min="0"
-                          max={service.bagCount}
+                          max={selectedBags.filter(b => !b.isBlocked).length}
                           value={bagsToDeliver}
                           onChange={(e) => handleBagsToDeliverChange(parseInt(e.target.value) || 0)}
                           className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                         />
                         <span className="text-sm text-gray-600">
-                          de {service.bagCount} bolsas totales ({partialPercentage}%)
+                          de {selectedBags.filter(b => !b.isBlocked).length} bolsas disponibles
                         </span>
+                        {selectedBags.some(b => b.isBlocked) && (
+                          <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                            {selectedBags.filter(b => b.isBlocked).length} ya entregadas
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -384,35 +569,55 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
                           <div
                             key={bag.id}
                             className={`
-                              flex items-center justify-center p-2 rounded-md border-2 cursor-pointer transition-all text-xs font-medium
-                              ${bag.delivered 
-                                ? 'bg-orange-100 border-orange-500 text-orange-700' 
-                                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
+                              flex items-center justify-center p-2 rounded-md border-2 transition-all text-xs font-medium relative
+                              ${bag.isBlocked 
+                                ? 'bg-red-100 border-red-400 text-red-700 cursor-not-allowed opacity-75' // Bolsas ya entregadas
+                                : bag.delivered 
+                                  ? 'bg-orange-100 border-orange-500 text-orange-700 cursor-pointer' // Bolsas seleccionadas para entregar
+                                  : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100 cursor-pointer' // Bolsas disponibles
                               }
                             `}
-                            onClick={() => handleBagToggle(bag.id)}
+                            onClick={() => !bag.isBlocked && handleBagToggle(bag.id)}
+                            title={bag.isBlocked ? 'Esta bolsa ya fue entregada anteriormente' : 'Clic para seleccionar/deseleccionar'}
                           >
                             <Package className="h-3 w-3 mr-1" />
                             {bag.id}
+                            {bag.isBlocked && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center">
+                                <span className="text-white text-xs font-bold">✓</span>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Haz clic en las bolsas para seleccionar/deseleccionar las que se van a entregar
-                      </p>
+                      <div className="text-xs text-gray-500 mt-2 space-y-1">
+                        <p>🟠 Naranja: Seleccionadas para entregar ahora</p>
+                        <p>🔴 Rojo: Ya entregadas anteriormente (bloqueadas)</p>
+                        <p>⚪ Gris: Disponibles para seleccionar</p>
+                      </div>
                     </div>
 
                     {/* Summary */}
-                    <div className="bg-orange-50 p-3 rounded-md">
-                      <div className="flex justify-between items-center text-sm">
+                    <div className="bg-orange-50 p-3 rounded-md space-y-2">
+                      <div className="text-sm">
                         <span className="text-gray-700">
-                          <strong>Para entregar:</strong> {selectedBags.filter(b => b.delivered).map(b => `Bolsa ${b.id}`).join(', ') || 'Ninguna'}
+                          <strong>Para entregar ahora:</strong> {selectedBags.filter(b => b.delivered && !b.isBlocked).map(b => `Bolsa ${b.id}`).join(', ') || 'Ninguna'}
                         </span>
                       </div>
-                      <div className="flex justify-between items-center text-sm mt-1">
+                      {selectedBags.some(b => b.isBlocked) && (
+                        <div className="text-sm">
+                          <span className="text-red-700">
+                            <strong>Ya entregadas:</strong> {selectedBags.filter(b => b.isBlocked).map(b => `Bolsa ${b.id}`).join(', ')}
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-sm">
                         <span className="text-gray-700">
-                          <strong>Pendientes:</strong> {selectedBags.filter(b => !b.delivered).map(b => `Bolsa ${b.id}`).join(', ') || 'Ninguna'}
+                          <strong>Disponibles:</strong> {selectedBags.filter(b => !b.delivered && !b.isBlocked).map(b => `Bolsa ${b.id}`).join(', ') || 'Ninguna'}
                         </span>
+                      </div>
+                      <div className="text-xs text-gray-600 bg-white p-2 rounded border-l-4 border-orange-400">
+                        <strong>Progreso total:</strong> {selectedBags.filter(b => b.isBlocked).length + selectedBags.filter(b => b.delivered && !b.isBlocked).length} de {service.bagCount} bolsas ({partialPercentage}%)
                       </div>
                     </div>
                   </div>

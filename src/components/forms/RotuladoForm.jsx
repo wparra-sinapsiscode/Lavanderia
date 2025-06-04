@@ -272,10 +272,10 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
         const labelsResponse = await bagLabelService.createLabels(service.id, labelsToCreate);
         
         if (labelsResponse.success) {
-          // Decidir el estado final basado en si hay fotos
-          const finalStatus = uploadedPhotoUrls.length > 0 ? 'IN_PROCESS' : 'LABELED';
+          // Solo marcar como LABELED - NO cambiar automáticamente a IN_PROCESS
+          const finalStatus = 'LABELED';
           const statusMessage = uploadedPhotoUrls.length > 0 
-            ? `Rotulado completado con ${uploadedPhotoUrls.length} fotos - Proceso iniciado automáticamente por ${user.name}`
+            ? `Rotulado completado con ${uploadedPhotoUrls.length} fotos por ${user.name}`
             : `Rotulado completado por ${user.name}`;
           
           // Actualizar estado del servicio
@@ -348,9 +348,9 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
         // Actualizar estado del servicio localmente
         const services = serviceStorage.getServices();
         const photoFiles = photos.filter(p => p.preview).map(photo => photo.preview);
-        const finalLocalStatus = photoFiles.length > 0 ? SERVICE_STATUS.IN_PROCESS : SERVICE_STATUS.LABELED;
+        const finalLocalStatus = SERVICE_STATUS.LABELED; // Solo LABELED, no automático
         const statusMessage = photoFiles.length > 0 
-          ? `Rotulado completado con ${photoFiles.length} fotos - Proceso iniciado automáticamente por ${user.name}`
+          ? `Rotulado completado con ${photoFiles.length} fotos por ${user.name}`
           : `Rotulado completado por ${user.name}`;
         
         const updatedServices = services.map(s => {
@@ -365,10 +365,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
               syncPending: true
             };
             
-            // Si pasa a EN_PROCESS, agregar timestamp de inicio de proceso
-            if (finalLocalStatus === SERVICE_STATUS.IN_PROCESS) {
-              updatedService.processStartDate = new Date().toISOString();
-            }
+            // Nota: No se agrega processStartDate aquí - se hará cuando manualmente se cambie a EN_PROCESS
             
             return updatedService;
           }
@@ -381,7 +378,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
       // Determinar mensaje basado en si hay fotos
       const photoCount = photos.filter(p => p.preview).length;
       const successMessage = photoCount > 0 
-        ? `¡Rotulado completado! ${labelCodes.length} rótulo${labelCodes.length !== 1 ? 's' : ''} con ${photoCount} foto${photoCount !== 1 ? 's' : ''}. El servicio pasó automáticamente a "En Proceso".`
+        ? `¡Rotulado completado! ${labelCodes.length} rótulo${labelCodes.length !== 1 ? 's' : ''} con ${photoCount} foto${photoCount !== 1 ? 's' : ''}. Ahora puedes hacer clic en "En Proceso" para continuar.`
         : `Rotulado completado exitosamente para ${service.guestName}. ${labelCodes.length} rótulo${labelCodes.length !== 1 ? 's' : ''} registrado${labelCodes.length !== 1 ? 's' : ''}.`;
       
       showNotification({
