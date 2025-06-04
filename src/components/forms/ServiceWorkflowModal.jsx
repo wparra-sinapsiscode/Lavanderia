@@ -4,6 +4,7 @@ import { SERVICE_STATUS } from '../../types';
 import { SERVICE_STATUS_CONFIG } from '../../constants';
 import { useNotifications } from '../../store/NotificationContext';
 import { formatDate, getStatusColor, getStatusText } from '../../utils';
+import serviceService from '../../services/service.service';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import RotuladoForm from './RotuladoForm';
@@ -183,8 +184,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const labels = bagLabelStorage.getBagLabelsByService(service.id);
     setExistingLabels(labels);
     
-    // Note: Auto-transition removed to give user more control
-    // The UI will clearly indicate when IN_PROCESS is available
+    // Note: Auto-transition now happens in RotuladoForm when photos are added
   }, [service, normalizedServiceStatus]);
 
   // Update percentage when bags selection changes
@@ -343,24 +343,41 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   // Function specifically for transitioning to IN_PROCESS
-  const handleStatusUpdateToInProcess = () => {
-    const services = serviceStorage.getServices();
-    const updatedServices = services.map(s => {
-      if (s.id === service.id) {
-        const updatedService = {
-          ...s,
-          status: SERVICE_STATUS.IN_PROCESS,
-          processStartDate: new Date().toISOString(),
-          internalNotes: (s.internalNotes || '') + 
-            ` | Proceso de lavandería iniciado - ${new Date().toLocaleString('es-PE')}`
-        };
+  const handleStatusUpdateToInProcess = async () => {
+    try {
+      // Intentar actualizar primero en la API
+      const apiResponse = await serviceService.updateServiceStatus(service.id, {
+        status: 'IN_PROCESS',
+        internalNotes: `Proceso de lavandería iniciado - ${new Date().toLocaleString('es-PE')}`
+      });
 
-        return updatedService;
+      if (apiResponse && apiResponse.success) {
+        console.log('Estado actualizado exitosamente en la API');
+      } else {
+        throw new Error('Error al actualizar en la API');
       }
-      return s;
-    });
+    } catch (apiError) {
+      console.warn('Error en API, actualizando localmente:', apiError);
+      
+      // Fallback: actualizar en almacenamiento local
+      const services = serviceStorage.getServices();
+      const updatedServices = services.map(s => {
+        if (s.id === service.id) {
+          const updatedService = {
+            ...s,
+            status: SERVICE_STATUS.IN_PROCESS,
+            processStartDate: new Date().toISOString(),
+            internalNotes: (s.internalNotes || '') + 
+              ` | Proceso de lavandería iniciado - ${new Date().toLocaleString('es-PE')}`
+          };
 
-    serviceStorage.setServices(updatedServices);
+          return updatedService;
+        }
+        return s;
+      });
+
+      serviceStorage.setServices(updatedServices);
+    }
     
     success(
       'Proceso Iniciado',
@@ -383,18 +400,41 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     // Check if IN_PROCESS should be available (when service has rotulado data with photos)
     const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
     const hasLabelData = serviceLabels.length > 0 && serviceLabels.some(label => label.label && label.label.trim() !== '');
-    const hasPhotoData = serviceLabels.length > 0 && serviceLabels.some(label => label.photo && label.photo.trim() !== '');
-    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoData);
+    const hasPhotoDataFromLabels = serviceLabels.length > 0 && serviceLabels.some(label => label.photo && label.photo.trim() !== '');
+    
+    // También verificar fotos directamente del servicio (para servicios que vienen del backend)
+    const hasPhotosFromService = service.labelingPhotos && service.labelingPhotos.length > 0;
+    const hasPhotosFromPickup = service.photos && service.photos.length > 0;
+    
+    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && 
+      (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup || 
+       (normalizedServiceStatus === SERVICE_STATUS.LABELED));
     
     // Handler para clicks en los estados
     const handleStepClick = () => {
+      console.log('🎯 Step clicked:', {
+        stepStatus: step.status,
+        normalizedServiceStatus,
+        hasLabelData,
+        hasPhotoDataFromLabels,
+        hasPhotosFromService,
+        hasPhotosFromPickup,
+        isInProcessAvailable,
+        servicePhotos: service.photos,
+        serviceLabelingPhotos: service.labelingPhotos
+      });
+      
       // Click en ROTULADO - mostrar formulario o vista de solo lectura (disponible desde PICKED_UP)
       if (step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) {
         setShowRotuladoForm(true);
       }
       // Click en EN PROCESO - actualizar directamente el estado si tiene datos de rotulado
-      else if (step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoData)) {
+      else if (step.status === SERVICE_STATUS.IN_PROCESS && 
+        (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup || normalizedServiceStatus === SERVICE_STATUS.LABELED)) {
+        console.log('✅ Calling handleStatusUpdateToInProcess');
         handleStatusUpdateToInProcess();
+      } else {
+        console.log('❌ Conditions not met for IN_PROCESS transition');
       }
     };
     
@@ -424,7 +464,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 'bg-gray-100 border-gray-300 text-gray-400'}
               ${isActive || isCompleted || isNextAvailable || isInProcessAvailable ? '' : 'opacity-50'}
               ${(step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) ||
-                (step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoData)) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
+                (step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup || normalizedServiceStatus === SERVICE_STATUS.LABELED)) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
             onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
