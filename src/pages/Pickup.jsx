@@ -41,6 +41,48 @@ const Pickup = () => {
     }
   }, [user]);
 
+  // Event listener para actualizar servicios cuando cambien estados
+  useEffect(() => {
+    const handleServiceStatusUpdate = (event) => {
+      const { serviceId, newStatus, updatedService, source } = event.detail;
+      
+      console.log('📡 Pickup.jsx recibió evento serviceStatusUpdated:', {
+        serviceId,
+        newStatus,
+        source,
+        currentServiceForWorkflow: serviceForWorkflow?.id
+      });
+      
+      // Actualizar la lista de servicios INMEDIATAMENTE
+      console.log('🔄 Forzando recarga inmediata de datos...');
+      loadPickupData();
+      
+      // Actualizar serviceForWorkflow si está abierto y es el mismo servicio
+      if (serviceForWorkflow && serviceForWorkflow.id === serviceId) {
+        console.log('🔄 Actualizando serviceForWorkflow desde evento:', {
+          oldStatus: serviceForWorkflow.status,
+          newStatus: newStatus
+        });
+        
+        const refreshedService = { 
+          ...serviceForWorkflow, 
+          status: newStatus,
+          ...(updatedService || {})
+        };
+        
+        setServiceForWorkflow(refreshedService);
+      }
+    };
+
+    // Agregar event listener
+    window.addEventListener('serviceStatusUpdated', handleServiceStatusUpdate);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('serviceStatusUpdated', handleServiceStatusUpdate);
+    };
+  }, [serviceForWorkflow]);
+
   // Auto-refresh pickup data periodically to sync with route updates
   useEffect(() => {
     // En modo producción actualizaríamos cada 30 segundos

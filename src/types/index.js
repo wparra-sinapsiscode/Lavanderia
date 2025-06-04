@@ -6,26 +6,24 @@ export const USER_ROLES = {
 
 // Service status - Workflow actualizado
 export const SERVICE_STATUS = {
-  PENDING_PICKUP: 'pendiente_recojo',
-  ASSIGNED_TO_ROUTE: 'asignado_ruta', // ✨ NUEVO: Repartidor en camino
-  PICKED_UP: 'recogido',
-  LABELED: 'rotulado',
-  IN_PROCESS: 'en_proceso',
-  DELIVERY: 'entrega', // NUEVO: Estado de entrega (decisión)
-  PARTIAL_DELIVERY: 'entrega_parcial',
-  COMPLETED: 'completado',
+  PENDING_PICKUP: 'PENDING_PICKUP',
+  ASSIGNED_TO_ROUTE: 'ASSIGNED_TO_ROUTE', // ✨ NUEVO: Repartidor en camino
+  PICKED_UP: 'PICKED_UP',
+  LABELED: 'LABELED',
+  IN_PROCESS: 'IN_PROCESS',
+  DELIVERY: 'DELIVERY', // NUEVO: Estado de entrega (decisión)
+  PARTIAL_DELIVERY: 'PARTIAL_DELIVERY',
+  COMPLETED: 'COMPLETED',
   // Estados de entrega
-  READY_FOR_DELIVERY: 'listo_entrega',
-  OUT_FOR_DELIVERY: 'en_entrega',
-  DELIVERED: 'entregado',
+  READY_FOR_DELIVERY: 'READY_FOR_DELIVERY',
+  OUT_FOR_DELIVERY: 'OUT_FOR_DELIVERY',
+  DELIVERED: 'DELIVERED',
   // Estados obsoletos mantenidos para compatibilidad
-  WASHED: 'lavado', // DEPRECATED
-  IRONED: 'planchado', // DEPRECATED  
-  READY: 'listo', // DEPRECATED
-  READY_FOR_DELIVERY: 'listo_entrega', // DEPRECATED
-  DELIVERED: 'entregado', // DEPRECATED
-  TOTAL_DELIVERY: 'entrega_total', // DEPRECATED
-  CANCELLED: 'cancelado'
+  WASHED: 'WASHED', // DEPRECATED
+  IRONED: 'IRONED', // DEPRECATED  
+  READY: 'READY', // DEPRECATED
+  TOTAL_DELIVERY: 'TOTAL_DELIVERY', // DEPRECATED
+  CANCELLED: 'CANCELLED'
 };
 
 // Service types structure (for reference)

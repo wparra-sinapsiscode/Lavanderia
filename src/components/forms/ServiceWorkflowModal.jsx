@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { serviceStorage, bagLabelStorage } from '../../utils/storage';
 import { SERVICE_STATUS } from '../../types';
 import { SERVICE_STATUS_CONFIG } from '../../constants';
@@ -13,6 +13,7 @@ import { Clock, CheckCircle, Package, Truck, Star, X, ArrowRight, Tag } from 'lu
 
 const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const { success, error } = useNotifications();
+  const [currentService, setCurrentService] = useState(service);
   const [selectedStatus, setSelectedStatus] = useState(service.status);
   const [notes, setNotes] = useState('');
   const [partialPercentage, setPartialPercentage] = useState(service.partialDeliveryPercentage || 50);
@@ -21,6 +22,63 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const [showRotuladoForm, setShowRotuladoForm] = useState(false);
   const [showProcessDecision, setShowProcessDecision] = useState(false);
   const [existingLabels, setExistingLabels] = useState([]);
+
+  // Escuchar eventos de actualización de estado
+  useEffect(() => {
+    const handleServiceStatusUpdate = (event) => {
+      const { serviceId, newStatus, updatedService, source } = event.detail;
+      
+      console.log('📡 ServiceWorkflowModal recibió evento serviceStatusUpdated:', {
+        serviceId,
+        currentServiceId: currentService.id,
+        newStatus,
+        source
+      });
+      
+      // Solo actualizar si es el mismo servicio
+      if (serviceId === currentService.id) {
+        console.log('🔄 Actualizando servicio en ServiceWorkflowModal:', {
+          oldStatus: currentService.status,
+          newStatus: newStatus
+        });
+        
+        // Actualizar el servicio actual con los nuevos datos
+        const refreshedService = { 
+          ...currentService, 
+          status: newStatus,
+          ...(updatedService || {})
+        };
+        
+        setCurrentService(refreshedService);
+        setSelectedStatus(newStatus);
+        
+        // Notificar al componente padre si es necesario
+        if (onStatusUpdated) {
+          onStatusUpdated(refreshedService);
+        }
+      }
+    };
+
+    // Agregar event listener
+    window.addEventListener('serviceStatusUpdated', handleServiceStatusUpdate);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('serviceStatusUpdated', handleServiceStatusUpdate);
+    };
+  }, [currentService.id, onStatusUpdated]);
+
+  // Actualizar cuando el prop service cambie (si viene nuevo desde afuera)
+  useEffect(() => {
+    if (service.id === currentService.id && service.status !== currentService.status) {
+      console.log('🔄 Prop service cambió, actualizando currentService:', {
+        oldStatus: currentService.status,
+        newStatus: service.status
+      });
+      setCurrentService(service);
+      setSelectedStatus(service.status);
+    }
+  }, [service]);
 
   // Debug log al abrir el modal (removido para producción)
 
@@ -43,25 +101,25 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   // Normalizar el estado del servicio
-  const normalizedServiceStatus = statusMapping[service.status] || service.status;
+  const normalizedServiceStatus = statusMapping[currentService.status] || currentService.status;
 
   // Detectar estado de entregas parciales
-  const hasPartialDeliveries = service.deliveredBags && service.deliveredBags.length > 0;
-  const totalBags = service.bagCount || 0;
-  const deliveredCount = service.deliveredBags?.length || 0;
+  const hasPartialDeliveries = currentService.deliveredBags && currentService.deliveredBags.length > 0;
+  const totalBags = currentService.bagCount || 0;
+  const deliveredCount = currentService.deliveredBags?.length || 0;
   const remainingBags = totalBags - deliveredCount;
   const isPartialInProgress = normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags > 0;
   const hasAllBagsDelivered = deliveredCount >= totalBags;
   
   // Debug logs para entender el estado
   console.log('🔍 Estado de entregas:', {
-    serviceId: service.id,
+    serviceId: currentService.id,
     normalizedServiceStatus,
     hasPartialDeliveries,
     totalBags,
     deliveredCount,
     remainingBags,
-    deliveredBags: service.deliveredBags,
+    deliveredBags: currentService.deliveredBags,
     isPartialInProgress
   });
 
@@ -140,7 +198,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     switch (targetStatus) {
       case SERVICE_STATUS.PICKED_UP:
         // To mark as picked up, service must have been processed through pickup form
-        return service.weight && service.photos && service.collectorName;
+        return currentService.weight && currentService.photos && currentService.collectorName;
       
       case SERVICE_STATUS.LABELED:
         // To mark as labeled, service must be picked up first
@@ -206,8 +264,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
 
   // Initialize bags array when component mounts or service changes
   React.useEffect(() => {
-    if (service && service.bagCount > 0) {
-      const bags = Array.from({ length: service.bagCount }, (_, index) => ({
+    if (currentService && currentService.bagCount > 0) {
+      const bags = Array.from({ length: currentService.bagCount }, (_, index) => ({
         id: index + 1,
         number: `Bolsa ${index + 1}`,
         delivered: false
@@ -216,36 +274,37 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     }
     
     // Cargar rótulos existentes si los hay
-    const labels = bagLabelStorage.getBagLabelsByService(service.id);
+    const labels = bagLabelStorage.getBagLabelsByService(currentService.id);
     setExistingLabels(labels);
     
     // Note: Auto-transition now happens in RotuladoForm when photos are added
-  }, [service, normalizedServiceStatus]);
+  }, [currentService, normalizedServiceStatus]);
 
   // 🔧 FIX: Detectar si el estado del servicio en localStorage es diferente al que tenemos
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (service?.id) {
+      if (currentService?.id) {
         const services = serviceStorage.getServices();
-        const currentServiceInStorage = services.find(s => s.id === service.id);
+        const currentServiceInStorage = services.find(s => s.id === currentService.id);
         
-        if (currentServiceInStorage && currentServiceInStorage.status !== service.status) {
+        if (currentServiceInStorage && currentServiceInStorage.status !== currentService.status) {
           console.log('🔍 ServiceWorkflowModal: Detectado cambio de estado en localStorage:', {
-            serviceId: service.id,
-            modalStatus: service.status,
+            serviceId: currentService.id,
+            modalStatus: currentService.status,
             storageStatus: currentServiceInStorage.status,
-            modalUpdatedAt: service.updatedAt,
+            modalUpdatedAt: currentService.updatedAt,
             storageUpdatedAt: currentServiceInStorage.updatedAt
           });
           
-          // El componente padre debería manejar esta actualización
-          // Pero podemos detectar la discrepancia y loggear para debugging
+          // Ahora actualizamos automáticamente con el event listener
+          setCurrentService(currentServiceInStorage);
+          setSelectedStatus(currentServiceInStorage.status);
         }
       }
     }, 1000); // Verificar cada segundo
     
     return () => clearInterval(interval);
-  }, [service]);
+  }, [currentService]);
 
   // Update percentage when bags selection changes
   React.useEffect(() => {
@@ -268,7 +327,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const handleBagsToDeliverChange = (newCount) => {
-    const count = Math.min(Math.max(0, newCount), service.bagCount);
+    const count = Math.min(Math.max(0, newCount), currentService.bagCount);
     setBagsToDeliver(count);
     
     // Update selected bags based on count
@@ -281,7 +340,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const handleStatusUpdate = () => {
-    if (!selectedStatus || selectedStatus === service.status) {
+    if (!selectedStatus || selectedStatus === currentService.status) {
       error('Selecciona un estado diferente');
       return;
     }
@@ -312,7 +371,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
 
     const services = serviceStorage.getServices();
     const updatedServices = services.map(s => {
-      if (s.id === service.id) {
+      if (s.id === currentService.id) {
         const updatedService = {
           ...s,
           status: selectedStatus,
@@ -331,7 +390,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           updatedService.partialDeliveryPercentage = partialPercentage;
           updatedService.deliveredBags = deliveredBags.map(bag => bag.number);
           updatedService.remainingBags = selectedBags.filter(bag => !bag.delivered).map(bag => bag.number);
-          updatedService.internalNotes += ` | Entrega parcial: ${bagsToDeliver}/${service.bagCount} bolsas (${partialPercentage}%) | Entregadas: ${deliveredBags.map(b => b.number).join(', ')}`;
+          updatedService.internalNotes += ` | Entrega parcial: ${bagsToDeliver}/${currentService.bagCount} bolsas (${partialPercentage}%) | Entregadas: ${deliveredBags.map(b => b.number).join(', ')}`;
         }
 
         // Add timestamps for specific statuses
@@ -368,7 +427,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   const handleAutoStatusUpdate = (newStatus, autoNote = '') => {
     const services = serviceStorage.getServices();
     const updatedServices = services.map(s => {
-      if (s.id === service.id) {
+      if (s.id === currentService.id) {
         const updatedService = {
           ...s,
           status: newStatus,
@@ -1192,17 +1251,17 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                     }
                     
                     // 5. En proceso
-                    if ((service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED') && service.processStartDate) {
+                    if ((currentService.status === 'IN_PROCESS' || currentService.status === 'PARTIAL_DELIVERY' || currentService.status === 'COMPLETED') && currentService.processStartDate) {
                       timeline.push({
-                        date: service.processStartDate,
+                        date: currentService.processStartDate,
                         icon: '⚙️',
                         text: 'Proceso de lavandería iniciado'
                       });
                     }
                     
                     // 6. Entregas parciales (extraer del internalNotes)
-                    if (service.internalNotes) {
-                      const notes = service.internalNotes.split('|');
+                    if (currentService.internalNotes) {
+                      const notes = currentService.internalNotes.split('|');
                       notes.forEach(note => {
                         const trimmedNote = note.trim();
                         // Buscar entregas parciales generadas
@@ -1231,22 +1290,22 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                     }
                     
                     // 7. Entrega final/completado
-                    if (service.deliveryDate && service.status === 'COMPLETED') {
+                    if (currentService.deliveryDate && currentService.status === 'COMPLETED') {
                       timeline.push({
-                        date: service.deliveryDate,
+                        date: currentService.deliveryDate,
                         icon: '✅',
                         text: 'Servicio completado - todas las bolsas entregadas'
                       });
                     }
                     
                     // 8. Fecha de entrega parcial (primera)
-                    if (service.partialDeliveryDate && service.status === 'PARTIAL_DELIVERY') {
-                      const deliveredCount = service.deliveredBags ? service.deliveredBags.length : 0;
-                      const percentage = service.partialDeliveryPercentage || 0;
+                    if (currentService.partialDeliveryDate && currentService.status === 'PARTIAL_DELIVERY') {
+                      const deliveredCount = currentService.deliveredBags ? currentService.deliveredBags.length : 0;
+                      const percentage = currentService.partialDeliveryPercentage || 0;
                       timeline.push({
-                        date: service.partialDeliveryDate,
+                        date: currentService.partialDeliveryDate,
                         icon: '🚚',
-                        text: `Estado: Entrega parcial (${deliveredCount}/${service.bagCount} bolsas - ${percentage}%)`
+                        text: `Estado: Entrega parcial (${deliveredCount}/${currentService.bagCount} bolsas - ${percentage}%)`
                       });
                     }
                     
@@ -1270,11 +1329,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 </div>
               </div>
 
-              {service.internalNotes && (
+              {currentService.internalNotes && (
                 <div className="mt-4">
                   <p className="text-gray-500 text-sm">Notas Técnicas</p>
                   <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded mt-1 max-h-32 overflow-y-auto">
-                    {service.internalNotes.split('|').map((note, index) => (
+                    {currentService.internalNotes.split('|').map((note, index) => (
                       <div key={index} className="mb-1">
                         {note.trim()}
                       </div>
@@ -1300,12 +1359,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       {/* Rotulado Form Modal */}
       {showRotuladoForm && (
         <RotuladoForm
-          service={service}
-          viewMode={normalizedServiceStatus === SERVICE_STATUS.LABELED && existingLabels.length === service.bagCount}
+          service={currentService}
+          viewMode={normalizedServiceStatus === SERVICE_STATUS.LABELED && existingLabels.length === currentService.bagCount}
           existingLabels={existingLabels}
           onClose={() => {
             setShowRotuladoForm(false);
-            setSelectedStatus(service.status); // Reset selected status
+            setSelectedStatus(currentService.status); // Reset selected status
           }}
           onStatusUpdated={() => {
             setShowRotuladoForm(false);
@@ -1318,7 +1377,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       {/* Process Decision Modal */}
       {showProcessDecision && (
         <ProcessDecisionModal
-          service={service}
+          service={currentService}
           onClose={() => {
             setShowProcessDecision(false);
           }}

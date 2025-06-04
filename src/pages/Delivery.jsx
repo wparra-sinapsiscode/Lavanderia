@@ -74,16 +74,17 @@ const Delivery = () => {
     setRepartidores(repartidoresList);
     
     // Filter services ready for delivery 
-    // Incluye: servicios parciales/completados del flujo original + servicios de entrega nuevos
+    // Incluye: servicios parciales del flujo original + servicios de entrega nuevos
     let ready = services.filter(s => 
-      // Servicios del flujo original (entrega parcial y completados que aún no se han entregado físicamente)
+      // Servicios del flujo original SOLO si son entrega parcial (aún hay bolsas pendientes)
       s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-      s.status === SERVICE_STATUS.COMPLETED ||
-      // Servicios de entrega nuevos con estados simplificados
+      // Servicios de entrega específicos (estos manejan la logística final)
       s.status === 'READY_FOR_DELIVERY' ||
       s.status === 'ASSIGNED_TO_ROUTE' ||
       s.status === 'OUT_FOR_DELIVERY' || // Mantenemos por compatibilidad
       s.isDeliveryService === true // Flag adicional para identificar servicios de entrega
+      // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED 
+      //    Los servicios COMPLETED ya tienen su servicio de entrega separado
     );
 
     // For repartidores, show only their assigned deliveries
@@ -100,9 +101,9 @@ const Delivery = () => {
     // Calculate stats
     const readyForDelivery = ready.filter(s => 
       s.status === SERVICE_STATUS.PARTIAL_DELIVERY ||
-      s.status === SERVICE_STATUS.COMPLETED ||
       s.status === 'READY_FOR_DELIVERY' ||
       s.status === 'ASSIGNED_TO_ROUTE'
+      // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED
     ).length;
     const myDeliveries = services.filter(s => s.deliveryRepartidorId === user.id).length;
     const today = new Date().toDateString();
