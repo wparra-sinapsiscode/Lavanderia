@@ -246,7 +246,20 @@ const Reports = () => {
     const dailyStats = {};
     
     services.forEach(service => {
-      const date = new Date(service.timestamp).toISOString().split('T')[0];
+      // Validar que la fecha del servicio sea válida
+      const serviceDate = service.timestamp || service.createdAt || service.date;
+      if (!serviceDate) {
+        console.warn('Servicio sin fecha válida:', service.id);
+        return; // Saltar este servicio
+      }
+      
+      const dateObj = new Date(serviceDate);
+      if (isNaN(dateObj.getTime())) {
+        console.warn('Fecha inválida en servicio:', service.id, serviceDate);
+        return; // Saltar este servicio
+      }
+      
+      const date = dateObj.toISOString().split('T')[0];
       if (!dailyStats[date]) {
         dailyStats[date] = { orders: 0, pickups: 0, completions: 0, routes: 0 };
       }
@@ -257,7 +270,26 @@ const Reports = () => {
     });
     
     routes.forEach(route => {
-      const date = route.date;
+      // Validar que la fecha de la ruta sea válida
+      const routeDate = route.date || route.createdAt || route.timestamp;
+      if (!routeDate) {
+        console.warn('Ruta sin fecha válida:', route.id);
+        return; // Saltar esta ruta
+      }
+      
+      // Si la fecha ya está en formato YYYY-MM-DD, usarla directamente
+      let date;
+      if (typeof routeDate === 'string' && routeDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        date = routeDate;
+      } else {
+        const dateObj = new Date(routeDate);
+        if (isNaN(dateObj.getTime())) {
+          console.warn('Fecha inválida en ruta:', route.id, routeDate);
+          return; // Saltar esta ruta
+        }
+        date = dateObj.toISOString().split('T')[0];
+      }
+      
       if (!dailyStats[date]) {
         dailyStats[date] = { orders: 0, pickups: 0, completions: 0, routes: 0 };
       }
@@ -547,11 +579,15 @@ const Reports = () => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Peso Total</span>
-                    <span className="text-2xl font-bold text-green-600">{metrics.totalWeight.toFixed(1)} kg</span>
+                    <span className="text-2xl font-bold text-green-600">
+                      {(typeof metrics.totalWeight === 'number' && !isNaN(metrics.totalWeight)) ? metrics.totalWeight.toFixed(1) : '0.0'} kg
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Peso Promedio</span>
-                    <span className="text-lg font-medium text-gray-900">{metrics.averageWeight.toFixed(1)} kg</span>
+                    <span className="text-lg font-medium text-gray-900">
+                      {(typeof metrics.averageWeight === 'number' && !isNaN(metrics.averageWeight)) ? metrics.averageWeight.toFixed(1) : '0.0'} kg
+                    </span>
                   </div>
                 </div>
               </Card.Content>
@@ -620,7 +656,7 @@ const Reports = () => {
                     <div className="text-right">
                       <p className="text-sm font-bold text-blue-600">{hotel.totalOrders} órdenes</p>
                       <p className="text-xs text-gray-500">
-                        {hotel.totalBags} bolsas • {hotel.totalWeight.toFixed(1)} kg
+                        {hotel.totalBags} bolsas • {(typeof hotel.totalWeight === 'number' && !isNaN(hotel.totalWeight)) ? hotel.totalWeight.toFixed(1) : '0.0'} kg
                       </p>
                     </div>
                   </div>
@@ -752,7 +788,7 @@ const Reports = () => {
                           {rep.routesCompleted}/{rep.routesAssigned}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {rep.totalWeight.toFixed(1)} kg
+                          {(typeof rep.totalWeight === 'number' && !isNaN(rep.totalWeight)) ? rep.totalWeight.toFixed(1) : '0.0'} kg
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
