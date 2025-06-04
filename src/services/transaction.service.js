@@ -1,5 +1,5 @@
 import api from './api';
-import { transactionStorage, serviceStorage, hotelStorage } from '../utils/storage';
+import { financeStorage, serviceStorage, hotelStorage } from '../utils/storage';
 
 /**
  * Transaction Service
@@ -28,7 +28,7 @@ class TransactionService {
       
       // Fallback to local storage
       try {
-        let transactions = transactionStorage.getTransactions() || [];
+        let transactions = financeStorage.getTransactions() || [];
         
         // Apply filters
         if (filters.type) {
@@ -90,7 +90,7 @@ class TransactionService {
       
       // Fallback to local storage
       try {
-        const transactions = transactionStorage.getTransactions() || [];
+        const transactions = financeStorage.getTransactions() || [];
         const transaction = transactions.find(t => t.id === id);
         
         if (!transaction) {
@@ -133,7 +133,7 @@ class TransactionService {
       
       // Fallback to local storage
       try {
-        const transactions = transactionStorage.getTransactions() || [];
+        const transactions = financeStorage.getTransactions() || [];
         
         const newTransaction = {
           id: Date.now().toString(),
@@ -144,7 +144,7 @@ class TransactionService {
         };
         
         transactions.push(newTransaction);
-        transactionStorage.setTransactions(transactions);
+        financeStorage.setTransactions(transactions);
         
         return {
           success: true,
@@ -175,7 +175,7 @@ class TransactionService {
       
       // Fallback to local storage - generate summary from local data
       try {
-        let transactions = transactionStorage.getTransactions() || [];
+        let transactions = financeStorage.getTransactions() || [];
         
         // Apply date filters if provided
         if (filters.startDate) {
@@ -302,7 +302,7 @@ class TransactionService {
       
       // Fallback to local storage
       try {
-        let transactions = transactionStorage.getTransactions() || [];
+        let transactions = financeStorage.getTransactions() || [];
         
         // Filter by hotel
         transactions = transactions.filter(t => t.hotelId === hotelId);
@@ -351,7 +351,7 @@ class TransactionService {
       
       // Fallback to local storage
       try {
-        const transactions = transactionStorage.getTransactions() || [];
+        const transactions = financeStorage.getTransactions() || [];
         const serviceTransactions = transactions.filter(t => t.serviceId === serviceId);
         
         return {
@@ -381,7 +381,7 @@ class TransactionService {
       
       // Fallback to local storage
       try {
-        const transactions = transactionStorage.getTransactions() || [];
+        const transactions = financeStorage.getTransactions() || [];
         const transactionIndex = transactions.findIndex(t => t.id === id);
         
         if (transactionIndex === -1) {
@@ -395,7 +395,7 @@ class TransactionService {
         };
         
         transactions[transactionIndex] = updatedTransaction;
-        transactionStorage.setTransactions(transactions);
+        financeStorage.setTransactions(transactions);
         
         return {
           success: true,
@@ -441,7 +441,7 @@ class TransactionService {
         
         const receiptBase64 = await receiptPromise;
         
-        const transactions = transactionStorage.getTransactions() || [];
+        const transactions = financeStorage.getTransactions() || [];
         const transactionIndex = transactions.findIndex(t => t.id === id);
         
         if (transactionIndex === -1) {
@@ -456,7 +456,7 @@ class TransactionService {
         };
         
         transactions[transactionIndex] = updatedTransaction;
-        transactionStorage.setTransactions(transactions);
+        financeStorage.setTransactions(transactions);
         
         return {
           success: true,

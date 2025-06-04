@@ -342,3 +342,18 @@ export const convertToBase64 = (file) => {
     reader.onerror = error => reject(error);
   });
 };
+
+// Status checking utility functions
+export const isStatusMatch = (service, statuses) => {
+  if (typeof statuses === 'string') {
+    return service.status === statuses;
+  }
+  if (Array.isArray(statuses)) {
+    return statuses.includes(service.status);
+  }
+  return false;
+};
+
+export const isPendingPickup = (service) => {
+  return isStatusMatch(service, ['PENDING_PICKUP', 'ASSIGNED_TO_ROUTE']);
+};

@@ -29,6 +29,7 @@ const Pickup = () => {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [serviceForWorkflow, setServiceForWorkflow] = useState(null);
   const [repartidores, setRepartidores] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     pendingPickups: 0,
     myPickups: 0,
@@ -151,6 +152,7 @@ const Pickup = () => {
   }, [location.state]);
 
   const loadPickupData = async () => {
+    setLoading(true);
     let services = [];
     let pending = [];
     let onlineMode = true;
@@ -323,6 +325,8 @@ const Pickup = () => {
           : 'No hay servicios disponibles en modo offline'
       });
     }
+    
+    setLoading(false);
   };
 
   const handlePickupCompleted = () => {
@@ -572,6 +576,20 @@ const Pickup = () => {
       </Card.Content>
     </Card>
   );
+
+  // Mostrar loading state
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex justify-center items-center min-h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Cargando servicios...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

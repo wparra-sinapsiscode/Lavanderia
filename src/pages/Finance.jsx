@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { financeStorage, serviceStorage } from '../utils/storage';
 import { formatCurrency, formatDate } from '../utils';
+import transactionService from '../services/transaction.service';
+import serviceService from '../services/service.service';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import TransactionForm from '../components/forms/TransactionForm';
@@ -30,6 +31,7 @@ const Finance = () => {
   const { success, error } = useNotifications();
   const [transactions, setTransactions] = useState([]);
   const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [selectedTransactionType, setSelectedTransactionType] = useState('income');
   const [showCalculator, setShowCalculator] = useState(false);
@@ -51,16 +53,38 @@ const Finance = () => {
     calculateStats();
   }, [transactions, services, dateFilter]);
 
-  const loadData = () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      const transactionData = financeStorage.getTransactions();
-      const serviceData = serviceStorage.getServices();
+      // Cargar transacciones desde la base de datos
+      const transactionResponse = await transactionService.getAllTransactions();
+      const serviceResponse = await serviceService.getAllServices();
       
-      setTransactions(transactionData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
-      setServices(serviceData);
+      if (transactionResponse.success) {
+        const sortedTransactions = transactionResponse.data.sort((a, b) => 
+          new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt)
+        );
+        setTransactions(sortedTransactions);
+      } else {
+        console.warn('Error cargando transacciones:', transactionResponse.message);
+        setTransactions([]);
+      }
+      
+      if (serviceResponse.success) {
+        setServices(serviceResponse.data);
+      } else {
+        console.warn('Error cargando servicios:', serviceResponse.message);
+        setServices([]);
+      }
+      
     } catch (err) {
       console.error('Error loading financial data:', err);
-      error('Error', 'No se pudieron cargar los datos financieros');
+      error('Error', 'No se pudieron cargar los datos financieros desde la base de datos');
+      // Fallback a arrays vacíos
+      setTransactions([]);
+      setServices([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -94,9 +118,9 @@ const Finance = () => {
 
       // Calculate service revenue
       const completedServices = services.filter(s => 
-        s.status === 'completado' && 
+        s.status === 'COMPLETED' && 
         s.price && 
-        new Date(s.deliveryDate || s.timestamp) >= startDate
+        new Date(s.deliveryDate || s.createdAt || s.timestamp) >= startDate
       );
       
       const serviceRevenue = completedServices.reduce((sum, service) => sum + (service.price || 0), 0);
@@ -212,6 +236,20 @@ const Finance = () => {
       </Card.Content>
     </Card>
   );
+
+  // Mostrar loading state
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-center items-center min-h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Cargando datos financieros...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

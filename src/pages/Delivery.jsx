@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { serviceStorage, hotelStorage, storage } from '../utils/storage';
 import { formatDate, getStatusColor, getStatusText } from '../utils';
 import { SERVICE_STATUS } from '../types';
-import { APP_CONFIG } from '../constants';
+import serviceService from '../services/service.service';
+import hotelService from '../services/hotel.service';
+import userService from '../services/user.service';
 import DeliveryForm from '../components/forms/DeliveryForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
 import DeliveryWorkflowModal from '../components/forms/DeliveryWorkflowModal';
@@ -33,6 +34,7 @@ const Delivery = () => {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [serviceForWorkflow, setServiceForWorkflow] = useState(null);
   const [repartidores, setRepartidores] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     readyForDelivery: 0,
     myDeliveries: 0,
@@ -65,58 +67,84 @@ const Delivery = () => {
     }
   }, [location.state]);
 
-  const loadDeliveryData = () => {
-    const services = serviceStorage.getServices();
-    const allUsers = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    const hotels = hotelStorage.getHotels();
-    
-    // Load repartidores for reassignment
-    const repartidoresList = allUsers.filter(u => u.role === 'repartidor');
-    setRepartidores(repartidoresList);
-    
-    // Filter services ready for delivery 
-    // Incluye SOLO servicios de entrega específicos (no servicios originales)
-    let ready = services.filter(s => 
-      // Servicios de entrega específicos (estos manejan la logística final)
-      s.status === 'READY_FOR_DELIVERY' ||
-      s.status === 'ASSIGNED_TO_ROUTE' ||
-      s.status === 'OUT_FOR_DELIVERY' || // Mantenemos por compatibilidad
-      s.isDeliveryService === true // Flag adicional para identificar servicios de entrega
-      // ❌ REMOVIDO: s.status === SERVICE_STATUS.PARTIAL_DELIVERY 
-      //    Los servicios PARTIAL_DELIVERY ya tienen sus servicios de entrega separados
-      // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED 
-      //    Los servicios COMPLETED ya tienen su servicio de entrega separado
-    );
-
-    // For repartidores, show only their assigned deliveries
-    if (isRepartidor) {
-      ready = ready.filter(s => 
-        !s.deliveryRepartidorId || s.deliveryRepartidorId === user.id
+  const loadDeliveryData = async () => {
+    setLoading(true);
+    try {
+      // Cargar datos desde la base de datos
+      const [servicesResponse, usersResponse, hotelsResponse] = await Promise.all([
+        serviceService.getAllServices(),
+        userService.getRepartidores({ active: true }),
+        hotelService.getAllHotels()
+      ]);
+      
+      // Procesar servicios
+      let services = [];
+      if (servicesResponse.success) {
+        services = servicesResponse.data;
+      } else {
+        console.warn('Error cargando servicios:', servicesResponse.message);
+      }
+      
+      // Procesar repartidores
+      if (usersResponse.success) {
+        setRepartidores(usersResponse.data);
+      } else {
+        console.warn('Error cargando repartidores:', usersResponse.message);
+        setRepartidores([]);
+      }
+      
+      // Filter services ready for delivery 
+      // Incluye SOLO servicios de entrega específicos (no servicios originales)
+      let ready = services.filter(s => 
+        // Servicios de entrega específicos (estos manejan la logística final)
+        s.status === 'READY_FOR_DELIVERY' ||
+        s.status === 'ASSIGNED_TO_ROUTE' ||
+        s.status === 'OUT_FOR_DELIVERY' || // Mantenemos por compatibilidad
+        s.isDeliveryService === true // Flag adicional para identificar servicios de entrega
+        // ❌ REMOVIDO: s.status === SERVICE_STATUS.PARTIAL_DELIVERY 
+        //    Los servicios PARTIAL_DELIVERY ya tienen sus servicios de entrega separados
+        // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED 
+        //    Los servicios COMPLETED ya tienen su servicio de entrega separado
       );
+
+      // For repartidores, show only their assigned deliveries
+      if (isRepartidor) {
+        ready = ready.filter(s => 
+          !s.deliveryRepartidorId || s.deliveryRepartidorId === user.id
+        );
+      }
+
+      setReadyServices(ready.sort((a, b) => 
+        new Date(a.createdAt || a.timestamp) - new Date(b.createdAt || b.timestamp)
+      ));
+
+      // Calculate stats
+      const readyForDelivery = ready.filter(s => 
+        s.status === 'READY_FOR_DELIVERY' ||
+        s.status === 'ASSIGNED_TO_ROUTE'
+        // ❌ REMOVIDO: s.status === SERVICE_STATUS.PARTIAL_DELIVERY
+        // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED
+      ).length;
+      const myDeliveries = services.filter(s => s.deliveryRepartidorId === user.id).length;
+      const today = new Date().toDateString();
+      const todayDeliveries = services.filter(s => 
+        s.deliveryDate && new Date(s.deliveryDate).toDateString() === today
+      ).length;
+
+      setStats({
+        readyForDelivery,
+        myDeliveries,
+        todayDeliveries
+      });
+      
+    } catch (err) {
+      console.error('Error loading delivery data:', err);
+      error('Error', 'No se pudieron cargar los datos de entrega desde la base de datos');
+      setReadyServices([]);
+      setRepartidores([]);
+    } finally {
+      setLoading(false);
     }
-
-    setReadyServices(ready.sort((a, b) => 
-      new Date(a.timestamp) - new Date(b.timestamp)
-    ));
-
-    // Calculate stats
-    const readyForDelivery = ready.filter(s => 
-      s.status === 'READY_FOR_DELIVERY' ||
-      s.status === 'ASSIGNED_TO_ROUTE'
-      // ❌ REMOVIDO: s.status === SERVICE_STATUS.PARTIAL_DELIVERY
-      // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED
-    ).length;
-    const myDeliveries = services.filter(s => s.deliveryRepartidorId === user.id).length;
-    const today = new Date().toDateString();
-    const todayDeliveries = services.filter(s => 
-      s.deliveryDate && new Date(s.deliveryDate).toDateString() === today
-    ).length;
-
-    setStats({
-      readyForDelivery,
-      myDeliveries,
-      todayDeliveries
-    });
   };
 
   const handleDeliveryCompleted = () => {
@@ -305,6 +333,20 @@ const Delivery = () => {
       </Card.Content>
     </Card>
   );
+
+  // Mostrar loading state
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex justify-center items-center min-h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Cargando datos de entrega...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { formatDate, formatLocalDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../utils';
+import { formatDate, formatLocalDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService, isStatusMatch, isPendingPickup } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
 import { SERVICE_STATUS_CONFIG } from '../constants';
 import routeService from '../services/route.service';
@@ -135,16 +135,14 @@ const Routes = () => {
       return "Sin servicios asignados";
     }
     
-    const pendingPickups = hotel.services.filter(s => 
-      s.status === 'PENDING_PICKUP' || s.status === 'ASSIGNED_TO_ROUTE'
-    ).length;
+    const pendingPickups = hotel.services.filter(s => isPendingPickup(s)).length;
     
     const pickedUp = hotel.services.filter(s => 
-      ['PICKED_UP', 'LABELED', 'IN_PROCESS'].includes(s.status)
+      isStatusMatch(s, ['PICKED_UP', 'LABELED', 'IN_PROCESS'])
     ).length;
     
     const completed = hotel.services.filter(s => 
-      ['PARTIAL_DELIVERY', 'COMPLETED'].includes(s.status)
+      isStatusMatch(s, ['PARTIAL_DELIVERY', 'COMPLETED'])
     ).length;
     
     if (pendingPickups > 0) {
@@ -407,7 +405,7 @@ const Routes = () => {
           // Revisar en services
           if (hotel.services && Array.isArray(hotel.services)) {
             hotel.services.forEach(service => {
-              if (service.id && service.status === 'PENDING_PICKUP') {
+              if (service.id && isStatusMatch(service, 'PENDING_PICKUP')) {
                 serviceIds.add(service.id);
               }
             });
@@ -416,7 +414,7 @@ const Routes = () => {
           // También revisar en pickups por compatibilidad
           if (hotel.pickups && Array.isArray(hotel.pickups)) {
             hotel.pickups.forEach(service => {
-              if (service.id && service.status === 'PENDING_PICKUP') {
+              if (service.id && isStatusMatch(service, 'PENDING_PICKUP')) {
                 serviceIds.add(service.id);
               }
             });
@@ -590,7 +588,7 @@ const Routes = () => {
             {/* Route Stats */}
             <div className="grid grid-cols-4 gap-3">
               <div className="text-center">
-                <p className="text-xl font-bold text-blue-600">{route.hotels.reduce((sum, h) => sum + (h.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length || 0), 0)}</p>
+                <p className="text-xl font-bold text-blue-600">{route.hotels.reduce((sum, h) => sum + (h.services?.filter(s => isPendingPickup(s)).length || 0), 0)}</p>
                 <p className="text-xs text-gray-600">Recojos</p>
               </div>
               <div className="text-center">
@@ -654,9 +652,9 @@ const Routes = () => {
                         {hotel.estimatedTimeMinutes ? ` ${hotel.estimatedTimeMinutes} min` : hotel.estimatedTime}
                       </p>
                       <div className="flex gap-1 mt-1">
-                        {hotel.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length > 0 && (
+                        {hotel.services?.filter(s => isPendingPickup(s)).length > 0 && (
                           <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded border-blue-200">
-                            {hotel.services.filter(s => s.status === 'ASSIGNED_TO_ROUTE' || s.status === 'PENDING_PICKUP').length} Recojos
+                            {hotel.services.filter(s => isPendingPickup(s)).length} Recojos
                           </span>
                         )}
                         {hotel.deliveries?.length > 0 && (
@@ -676,8 +674,7 @@ const Routes = () => {
                           shouldShow: service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE'
                         });
                         return (
-                        (service.status === 'PENDING_PICKUP' || 
-                         service.status === 'ASSIGNED_TO_ROUTE') && (
+                        isPendingPickup(service) && (
                           <div key={`service-${service.id}`} className="flex items-center gap-3 p-2 bg-blue-50 rounded border border-blue-200">
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-900">
@@ -963,6 +960,7 @@ const Routes = () => {
           </Card.Content>
         </Card>
       )}
+
 
       {/* Active Route */}
       {activeRoute && (
