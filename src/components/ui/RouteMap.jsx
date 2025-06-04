@@ -77,7 +77,7 @@ const RouteMap = ({ route: initialRoute, routeId, hotels }) => {
       <Card.Content>
         <div className="space-y-6">
           {/* Route Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
             <div className="text-center">
               <p className="text-sm text-gray-600">Distancia Total</p>
               <p className="text-lg font-bold text-blue-600">
@@ -98,9 +98,15 @@ const RouteMap = ({ route: initialRoute, routeId, hotels }) => {
               <p className="text-lg font-bold text-purple-600">{route.hotels.length}</p>
             </div>
             <div className="text-center">
-              <p className="text-sm text-gray-600">Eficiencia</p>
-              <p className="text-lg font-bold text-orange-600">
-                {route.efficiency ? `${route.efficiency}%` : 'N/A'}
+              <p className="text-sm text-gray-600">Recojos</p>
+              <p className="text-lg font-bold text-blue-600">
+                {route.totalPickups || 0}
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-gray-600">Entregas</p>
+              <p className="text-lg font-bold text-green-600">
+                {route.totalDeliveries || 0}
               </p>
             </div>
           </div>
@@ -176,24 +182,73 @@ const RouteMap = ({ route: initialRoute, routeId, hotels }) => {
 
           {/* Route Timeline */}
           <div className="space-y-3">
-            <h4 className="font-medium text-gray-900">Cronograma de Ruta</h4>
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-gray-900">Cronograma de Ruta</h4>
+              {/* Leyenda de colores */}
+              <div className="flex items-center space-x-4 text-xs">
+                <div className="flex items-center space-x-1">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                  <span>↑ Recojo</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span>↓ Entrega</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  <span>🔥 Alta Prioridad</span>
+                </div>
+              </div>
+            </div>
             <div className="space-y-2">
-              {route.hotels.map((hotel, index) => (
-                <div key={index} className="flex items-center space-x-3 p-3 border rounded-lg">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${
-                    hotel.completed ? 'bg-green-500' : 'bg-blue-500'
-                  }`}>
-                    {index + 1}
-                  </div>
+              {route.hotels.map((hotel, index) => {
+                // Detectar tipo de parada basado en las notas o contenido
+                const isDeliveryStop = hotel.notes && hotel.notes.includes('ENTREGA');
+                const isPickupStop = hotel.notes && hotel.notes.includes('RECOJO');
+                const isHighPriority = hotel.notes && hotel.notes.includes('ALTA PRIORIDAD');
+                
+                // Determinar color del indicador
+                let stopColor = 'bg-blue-500'; // Default
+                if (hotel.completed) {
+                  stopColor = 'bg-green-500';
+                } else if (isDeliveryStop && isPickupStop) {
+                  stopColor = 'bg-purple-500'; // Parada mixta
+                } else if (isDeliveryStop) {
+                  stopColor = 'bg-green-500'; // Entrega
+                } else if (isPickupStop) {
+                  stopColor = 'bg-blue-500'; // Recojo
+                }
+                
+                if (isHighPriority && !hotel.completed) {
+                  stopColor = 'bg-red-500'; // Alta prioridad
+                }
+                
+                return (
+                  <div key={index} className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${stopColor}`}>
+                      {isDeliveryStop && isPickupStop ? '⇅' : 
+                       isDeliveryStop ? '↓' : 
+                       isPickupStop ? '↑' : 
+                       index + 1}
+                    </div>
                   
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-gray-900">{hotel.hotelName}</p>
                         <p className="text-sm text-gray-600">{hotel.hotelAddress}</p>
-                        <p className="text-xs text-gray-500">
-                          {hotel.pickups.length} recojo{hotel.pickups.length !== 1 ? 's' : ''}
-                        </p>
+                        <div className="flex items-center space-x-2 text-xs text-gray-500">
+                          {hotel.pickups && hotel.pickups.length > 0 && (
+                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                              {hotel.pickups.length} recojo{hotel.pickups.length !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {hotel.deliveries && hotel.deliveries.length > 0 && (
+                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                              {hotel.deliveries.length} entrega{hotel.deliveries.length !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="text-right">
@@ -225,7 +280,8 @@ const RouteMap = ({ route: initialRoute, routeId, hotels }) => {
                     {hotel.completed ? 'Completado' : 'Pendiente'}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

@@ -8,6 +8,7 @@ import { SERVICE_STATUS } from '../types';
 import { APP_CONFIG } from '../constants';
 import DeliveryForm from '../components/forms/DeliveryForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
+import DeliveryWorkflowModal from '../components/forms/DeliveryWorkflowModal';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { Truck, Clock, Package, MapPin, RefreshCw, UserCheck, GitBranch, CheckCircle } from 'lucide-react';
@@ -543,59 +544,27 @@ const Delivery = () => {
                         </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
-                          {/* Estado: READY_FOR_DELIVERY */}
+                          {/* Estado: READY_FOR_DELIVERY - Mostrar estado igual que en columna Estado */}
                           {service.status === 'READY_FOR_DELIVERY' && (
-                            <>
-                              {isRepartidor && service.deliveryRepartidorId === user.id ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleStartDelivery(service)}
-                                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                                >
-                                  <Truck className="h-4 w-4 mr-1" />
-                                  Iniciar Entrega
-                                </Button>
-                              ) : isAdmin && !service.deliveryRepartidorId ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleReassignService(service)}
-                                  className="text-xs"
-                                >
-                                  Asignar Entregador
-                                </Button>
-                              ) : (
-                                <span className="text-amber-600">Esperando</span>
-                              )}
-                            </>
+                            <div className="flex items-center text-amber-600">
+                              <Clock className="h-4 w-4 mr-1" />
+                              <span>Esperando</span>
+                            </div>
                           )}
                           
-                          {/* Estado: ASSIGNED_TO_ROUTE */}
+                          {/* Estado: ASSIGNED_TO_ROUTE - Mostrar estado igual que en columna Estado */}
                           {service.status === 'ASSIGNED_TO_ROUTE' && (
-                            <>
-                              {isRepartidor && service.deliveryRepartidorId === user.id ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => setSelectedService(service)}
-                                  className="bg-green-600 hover:bg-green-700 text-white"
-                                >
-                                  <Package className="h-4 w-4 mr-1" />
-                                  Entregar
-                                </Button>
-                              ) : (
-                                <div className="flex items-center text-blue-600">
-                                  <Truck className="h-4 w-4 mr-1" />
-                                  <span>En Ruta</span>
-                                </div>
-                              )}
-                            </>
+                            <div className="flex items-center text-blue-600">
+                              <Truck className="h-4 w-4 mr-1" />
+                              <span>Ruta Asignada</span>
+                            </div>
                           )}
                           
-                          {/* Estado: COMPLETED */}
+                          {/* Estado: COMPLETED - Mostrar estado igual que en columna Estado */}
                           {service.status === 'COMPLETED' && (
                             <div className="flex items-center text-green-600">
                               <CheckCircle className="h-4 w-4 mr-1" />
-                              <span>✓ Entregado</span>
+                              <span>Completado</span>
                             </div>
                           )}
                           
@@ -699,9 +668,9 @@ const Delivery = () => {
         </div>
       )}
 
-      {/* Workflow Modal */}
+      {/* Delivery Workflow Modal */}
       {showWorkflowModal && serviceForWorkflow && (
-        <ServiceWorkflowModal
+        <DeliveryWorkflowModal
           service={serviceForWorkflow}
           onClose={handleWorkflowClose}
           onStatusUpdated={handleStatusUpdated}
