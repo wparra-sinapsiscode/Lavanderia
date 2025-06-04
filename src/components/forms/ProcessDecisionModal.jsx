@@ -225,6 +225,39 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       ? service.weight 
       : service.weight ? (parseFloat(service.weight) * (bagCount / service.bagCount)).toFixed(1) : null;
     
+    // Extraer fecha de lavado del historial del servicio original
+    const extractWashDate = (service) => {
+      // Prioridad 1: processStartDate directo
+      if (service.processStartDate) {
+        return service.processStartDate;
+      }
+      
+      // Prioridad 2: buscar en internalNotes formato [PROCESS_START_DATE:...]
+      if (service.internalNotes && service.internalNotes.includes('[PROCESS_START_DATE:')) {
+        const match = service.internalNotes.match(/\[PROCESS_START_DATE:([^\]]+)\]/);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+      
+      // Prioridad 3: buscar "Estado actualizado a En Proceso" en internalNotes
+      if (service.internalNotes && service.internalNotes.includes('Estado actualizado a En Proceso')) {
+        const notes = service.internalNotes.split('|');
+        const processNote = notes.find(note => note.includes('Estado actualizado a En Proceso'));
+        if (processNote) {
+          const match = processNote.match(/(\d{1,2}\/\d{1,2}\/\d{4},?\s*\d{1,2}:\d{2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
+          if (match) {
+            return new Date(match[1]).toISOString();
+          }
+        }
+      }
+      
+      // Fallback: usar fecha de creación del servicio
+      return service.createdAt || service.timestamp || new Date().toISOString();
+    };
+    
+    const washDate = extractWashDate(service);
+    
     // Crear el nuevo servicio de entrega
     const deliveryService = {
       id: deliveryServiceId,
@@ -285,6 +318,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       serviceType: 'DELIVERY', // Tipo de servicio
       isDeliveryService: true, // Flag para identificar servicios de entrega
       deliveryBags: selectedBagsData.map(b => b.number), // Bolsas específicas para entregar
+      washDate: washDate, // Fecha de inicio del proceso de lavandería
       
       // Metadatos
       createdAt: new Date().toISOString(),

@@ -412,7 +412,7 @@ const Delivery = () => {
                       Lavado
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Entregador
+                      Zona
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Acciones
@@ -420,81 +420,126 @@ const Delivery = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {readyServices.map((service) => (
-                    <tr key={service.id}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {service.guestName}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Hab. {service.roomNumber}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {getHotelName(service.hotel)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <Package className="h-4 w-4 text-gray-400 mr-1" />
-                          <span className="text-sm text-gray-900">
-                            {service.bagCount}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(service.status)}`}>
-                            {getStatusText(service.status)}
-                          </span>
-                          {isAdmin && (
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              onClick={() => handleWorkflowOpen(service)}
-                              className="h-6 w-6 p-0 text-gray-400 hover:text-primary-600"
-                              title="Seguimiento de Estado"
-                            >
-                              <GitBranch className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {service.pickupDate ? formatDate(service.pickupDate) : 'No recogido'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {service.deliveryRepartidor ? (
+                  {readyServices.map((service) => {
+                    
+                    const bagInfo = (() => {
+                      // Para servicios de entrega, mostrar deliveryBags si está disponible
+                      if (service.deliveryBags && service.deliveryBags.length > 0) {
+                        return {
+                          count: service.deliveryBags.length,
+                          details: service.deliveryBags.join(', ')
+                        };
+                      }
+                      
+                      // Para servicios normales
+                      return {
+                        count: service.bagCount,
+                        details: `${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}`
+                      };
+                    })();
+                    
+                    return (
+                      <tr key={service.id}>
+                        {/* Cliente */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {service.guestName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              Hab. {service.roomNumber}
+                            </p>
+                          </div>
+                        </td>
+                        
+                        {/* Hotel */}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {getHotelName(service.hotel)}
+                        </td>
+                        
+                        {/* Bolsas */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <Package className="h-4 w-4 text-gray-400 mr-1" />
+                            <span className="text-sm text-gray-900" title={bagInfo.details}>
+                              {bagInfo.count}
+                            </span>
+                          </div>
+                        </td>
+                        
+                        {/* Estado */}
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-2">
-                            <span>{service.deliveryRepartidor}</span>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(service.status)}`}>
+                              {getStatusText(service.status)}
+                            </span>
                             {isAdmin && (
                               <Button
                                 size="xs"
                                 variant="ghost"
-                                onClick={() => handleReassignService(service)}
-                                className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
-                                title="Reasignar"
+                                onClick={() => handleWorkflowOpen(service)}
+                                className="h-6 w-6 p-0 text-gray-400 hover:text-primary-600"
+                                title="Seguimiento de Estado"
                               >
-                                <UserCheck className="h-3 w-3" />
+                                <GitBranch className="h-3 w-3" />
                               </Button>
                             )}
                           </div>
-                        ) : (
-                          isAdmin ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReassignService(service)}
-                              className="text-xs"
-                            >
-                              Asignar entregador
-                            </Button>
-                          ) : (
-                            <span className="text-gray-400 italic">Sin asignar</span>
-                          )
-                        )}
-                      </td>
+                        </td>
+                        
+                        {/* Lavado */}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 text-gray-400 mr-1" />
+                            {(() => {
+                              // Para servicios de entrega, usar washDate si está disponible
+                              if (service.washDate) {
+                                return formatDate(service.washDate);
+                              }
+                              
+                              // Para servicios originales, extraer de processStartDate
+                              if (service.processStartDate) {
+                                return formatDate(service.processStartDate);
+                              }
+                              
+                              // Buscar en internalNotes
+                              if (service.internalNotes && service.internalNotes.includes('[PROCESS_START_DATE:')) {
+                                const match = service.internalNotes.match(/\[PROCESS_START_DATE:([^\]]+)\]/);
+                                if (match && match[1]) {
+                                  return formatDate(match[1]);
+                                }
+                              }
+                              
+                              // Fallback
+                              return formatDate(service.createdAt || service.timestamp);
+                            })()}
+                          </div>
+                        </td>
+                        
+                        {/* Zona */}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="flex items-center">
+                            <MapPin className="h-4 w-4 text-gray-400 mr-1" />
+                            <span className="font-medium text-gray-700">{(() => {
+                              // Siempre mostrar la zona del hotel
+                              if (typeof service.hotel === 'object' && service.hotel.zone) {
+                                return service.hotel.zone;
+                              }
+                              
+                              // Fallback: intentar extraer zona de otros campos
+                              if (service.hotelZone) {
+                                return service.hotelZone;
+                              }
+                              
+                              return 'Sin zona';
+                            })()}</span>
+                            {service.deliveryRepartidor && (
+                              <div className="ml-2 text-xs text-gray-500">
+                                ({service.deliveryRepartidor})
+                              </div>
+                            )}
+                          </div>
+                        </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           {/* Estado: READY_FOR_DELIVERY */}
@@ -563,7 +608,8 @@ const Delivery = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

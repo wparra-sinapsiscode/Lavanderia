@@ -103,13 +103,20 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       color: 'purple'
     },
     {
+      status: SERVICE_STATUS.DELIVERY,
+      title: 'Entrega',
+      description: 'Decisión de entrega',
+      icon: Truck,
+      color: 'indigo'
+    },
+    {
       status: SERVICE_STATUS.PARTIAL_DELIVERY,
-      title: isPartialInProgress ? 'Entrega Final' : 'Entrega',
-      description: isPartialInProgress 
-        ? `Entregar ${remainingBags} bolsa${remainingBags !== 1 ? 's' : ''} restante${remainingBags !== 1 ? 's' : ''}` 
-        : 'Entrega de bolsas al cliente',
-      icon: isPartialInProgress ? CheckCircle : Package,
-      color: isPartialInProgress ? 'green' : 'orange'
+      title: 'Entrega Parcial',
+      description: hasPartialDeliveries 
+        ? `${deliveredCount}/${totalBags} bolsas entregadas` 
+        : 'Entrega parcial de bolsas',
+      icon: Package,
+      color: 'orange'
     },
     {
       status: SERVICE_STATUS.COMPLETED,
@@ -177,9 +184,14 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     // Check if requirements are met for this status
     if (!validateStatusRequirements(targetStatus)) return false;
     
-    // Special logic for bifurcation from "En Proceso"
+    // Special logic for new flow
     if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
-      // From "En Proceso" can go to either "Entrega Parcial" or "Completado"
+      // From "En Proceso" can only go to "Entrega"
+      return targetStatus === SERVICE_STATUS.DELIVERY;
+    }
+    
+    // From "Entrega" can go to "Entrega Parcial" or "Completado"
+    if (normalizedServiceStatus === SERVICE_STATUS.DELIVERY) {
       return targetStatus === SERVICE_STATUS.PARTIAL_DELIVERY || targetStatus === SERVICE_STATUS.COMPLETED;
     }
     
@@ -460,6 +472,182 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     }
   };
 
+  // Function for complete delivery from DELIVERY state (skip partial)
+  const handleCompleteDeliveryFromDelivery = async () => {
+    console.log('🔧 DEBUG: Iniciando entrega completa desde DELIVERY', {
+      serviceId: service.id,
+      currentStatus: service.status,
+      totalBags: service.bagCount
+    });
+    
+    try {
+      // Crear servicio de entrega completa
+      const services = serviceStorage.getServices();
+      const users = storage.get('USERS') || [];
+      
+      // Extraer fecha de lavado
+      const extractWashDate = (service) => {
+        if (service.processStartDate) return service.processStartDate;
+        if (service.internalNotes && service.internalNotes.includes('[PROCESS_START_DATE:')) {
+          const match = service.internalNotes.match(/\[PROCESS_START_DATE:([^\]]+)\]/);
+          if (match && match[1]) return match[1];
+        }
+        return service.createdAt || service.timestamp || new Date().toISOString();
+      };
+      
+      // Crear servicio de entrega
+      const deliveryServiceId = `delivery-${service.id}-${Date.now()}`;
+      const washDate = extractWashDate(service);
+      const assignedRepartidor = users.find(u => u.role === 'repartidor' && u.zone === (typeof service.hotel === 'object' ? service.hotel.zone : 'CENTRO'));
+      
+      const deliveryService = {
+        id: deliveryServiceId,
+        guestName: service.guestName,
+        roomNumber: service.roomNumber,
+        hotel: service.hotel,
+        hotelId: service.hotelId,
+        bagCount: service.bagCount,
+        weight: service.weight,
+        observations: `Servicio de entrega completa | Servicio origen: ${service.id}`,
+        specialInstructions: service.specialInstructions || '',
+        priority: service.priority || 'NORMAL',
+        pickupDate: new Date().toISOString(),
+        estimatedPickupDate: new Date().toISOString(),
+        labeledDate: new Date().toISOString(),
+        deliveryDate: null,
+        estimatedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        status: 'READY_FOR_DELIVERY',
+        photos: service.labelingPhotos || service.photos || [],
+        labelingPhotos: service.labelingPhotos || [],
+        signature: null,
+        collectorName: null,
+        geolocation: null,
+        repartidorId: assignedRepartidor?.id || null,
+        deliveryRepartidorId: assignedRepartidor?.id || null,
+        deliveryRepartidor: assignedRepartidor?.name || null,
+        partialDeliveryPercentage: 100,
+        price: service.price || null,
+        pickupTimeSlot: null,
+        customerNotes: `Entrega completa de servicio de lavandería`,
+        internalNotes: [
+          `[${new Date().toLocaleString('es-PE')}] Servicio de entrega completa creado`,
+          `Servicio origen: ${service.id}`,
+          `Tipo: COMPLETE (${service.bagCount}/${service.bagCount} bolsas)`,
+          `Cliente: ${service.guestName} - Hab. ${service.roomNumber}`,
+          `Hotel: ${typeof service.hotel === 'object' ? service.hotel.name : service.hotel}`,
+          assignedRepartidor ? `Repartidor asignado: ${assignedRepartidor.name}` : 'Sin repartidor asignado'
+        ].join(' | '),
+        originalServiceId: service.id,
+        serviceType: 'DELIVERY',
+        isDeliveryService: true,
+        deliveryBags: Array.from({ length: service.bagCount }, (_, i) => `Bolsa ${i + 1}`),
+        washDate: washDate,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString()
+      };
+      
+      // Actualizar servicio original a COMPLETED
+      const updatedServices = services.map(s => {
+        if (s.id === service.id) {
+          const now = new Date().toISOString();
+          return {
+            ...s,
+            status: SERVICE_STATUS.COMPLETED,
+            deliveryDate: now,
+            updatedAt: now,
+            partialDeliveryPercentage: 100,
+            internalNotes: (s.internalNotes || '') + 
+              ` | Entrega completa procesada - ${new Date().toLocaleString('es-PE')} | Servicio de entrega creado: ${deliveryServiceId} | Servicio completado`
+          };
+        }
+        return s;
+      });
+      
+      // Agregar servicio de entrega a la lista
+      updatedServices.push(deliveryService);
+      serviceStorage.setServices(updatedServices);
+      
+      console.log('✅ Servicio de entrega completa creado:', {
+        originalId: service.id,
+        deliveryId: deliveryServiceId,
+        bagCount: service.bagCount,
+        washDate
+      });
+      
+      success(
+        'Entrega Completa Procesada',
+        `¡Servicio completado! Se creó servicio de entrega para todas las ${service.bagCount} bolsas`
+      );
+      
+      onStatusUpdated();
+      
+      setTimeout(() => {
+        onClose();
+      }, 100);
+    } catch (error) {
+      console.error('Error en entrega completa:', error);
+      error('Error', 'No se pudo completar la entrega');
+    }
+  };
+
+  // Function specifically for transitioning to DELIVERY
+  const handleStatusUpdateToDelivery = async () => {
+    console.log('🔧 DEBUG: Iniciando handleStatusUpdateToDelivery', {
+      serviceId: service.id,
+      currentStatus: service.status,
+      timestamp: new Date().toISOString()
+    });
+    
+    try {
+      // Actualizar en localStorage
+      const services = serviceStorage.getServices();
+      const updatedServices = services.map(s => {
+        if (s.id === service.id) {
+          const now = new Date().toISOString();
+          const updatedService = {
+            ...s,
+            status: SERVICE_STATUS.DELIVERY,
+            updatedAt: now,
+            internalNotes: (s.internalNotes || '') + 
+              ` | Estado actualizado a Entrega - ${new Date().toLocaleString('es-PE')} | Listo para tomar decisión de entrega`
+          };
+
+          console.log('🔧 DEBUG: Guardando en localStorage estado DELIVERY:', {
+            serviceId: updatedService.id,
+            status: updatedService.status,
+            now: now,
+            internalNotes: updatedService.internalNotes
+          });
+
+          return updatedService;
+        }
+        return s;
+      });
+
+      console.log('🔧 DEBUG: Guardando servicios actualizados en localStorage');
+      serviceStorage.setServices(updatedServices);
+      
+      success(
+        'Estado Actualizado',
+        'El servicio ha pasado a estado "Entrega" - Puedes decidir entre entrega completa o parcial'
+      );
+      
+      // IMPORTANTE: Notificar al componente padre para que recargue el servicio
+      console.log('🔧 DEBUG: Notificando actualización de estado al componente padre');
+      onStatusUpdated();
+      
+      // Pequeño delay para asegurar que el padre actualice antes de cerrar
+      setTimeout(() => {
+        console.log('🔧 DEBUG: Cerrando modal después de actualización');
+        onClose();
+      }, 100);
+    } catch (error) {
+      console.error('Error actualizando a DELIVERY:', error);
+      error('Error', 'No se pudo actualizar el estado del servicio');
+    }
+  };
+
   // Function specifically for transitioning to IN_PROCESS
   const handleStatusUpdateToInProcess = async () => {
     console.log('🔧 DEBUG: Iniciando handleStatusUpdateToInProcess', {
@@ -600,9 +788,19 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       normalizedServiceStatus === SERVICE_STATUS.LABELED &&
       (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup);
     
-    // Check if ENTREGA (PARTIAL_DELIVERY) should be available when service is IN_PROCESS
-    const isEntregaAvailable = step.status === SERVICE_STATUS.PARTIAL_DELIVERY && 
+    // Check if ENTREGA (DELIVERY) should be available when service is IN_PROCESS
+    const isDeliveryAvailable = step.status === SERVICE_STATUS.DELIVERY && 
       normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS;
+    
+    // Check if ENTREGA PARCIAL should be available when service is DELIVERY or already in PARTIAL_DELIVERY
+    const isPartialDeliveryAvailable = step.status === SERVICE_STATUS.PARTIAL_DELIVERY && 
+      (normalizedServiceStatus === SERVICE_STATUS.DELIVERY || 
+       (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags > 0));
+    
+    // Check if COMPLETED should be available when service is DELIVERY or PARTIAL_DELIVERY
+    const isCompletedAvailable = step.status === SERVICE_STATUS.COMPLETED && 
+      (normalizedServiceStatus === SERVICE_STATUS.DELIVERY || 
+       (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags === 0));
     
     // Handler para clicks en los estados
     const handleStepClick = () => {
@@ -629,9 +827,17 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
         console.log('✅ Calling handleStatusUpdateToInProcess');
         handleStatusUpdateToInProcess();
       }
-      // Click en ENTREGA - lógica diferenciada según estado
+      // Click en ENTREGA (nuevo estado DELIVERY)
+      else if (step.status === SERVICE_STATUS.DELIVERY) {
+        console.log('🔍 Click en ENTREGA desde IN_PROCESS');
+        if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
+          console.log('✅ Transitioning from IN_PROCESS to DELIVERY');
+          handleStatusUpdateToDelivery();
+        }
+      }
+      // Click en ENTREGA PARCIAL
       else if (step.status === SERVICE_STATUS.PARTIAL_DELIVERY) {
-        console.log('🔍 Evaluando entrega:', {
+        console.log('🔍 Evaluando entrega parcial:', {
           normalizedServiceStatus,
           hasPartialDeliveries,
           deliveredCount,
@@ -639,14 +845,14 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           serviceDeliveredBags: service.deliveredBags
         });
         
-        // Si ya hay bolsas entregadas (desde cualquier estado), manejar entrega final
-        if (hasPartialDeliveries && remainingBags > 0) {
-          console.log('✅ Handling final delivery for remaining bags:', remainingBags);
-          handleFinalDelivery();
+        // Si estamos en DELIVERY, abrir el modal para hacer entrega parcial
+        if (normalizedServiceStatus === SERVICE_STATUS.DELIVERY) {
+          console.log('✅ Opening delivery decision modal from DELIVERY');
+          setShowProcessDecision(true);
         }
-        // Si no hay entregas previas y estamos en IN_PROCESS, primera entrega
-        else if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS && !hasPartialDeliveries) {
-          console.log('✅ Opening delivery decision modal for first delivery');
+        // Si estamos en PARTIAL_DELIVERY, abrir el modal para continuar entregando
+        else if (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags > 0) {
+          console.log('✅ Opening delivery decision modal for remaining bags');
           setShowProcessDecision(true);
         }
         // Si estamos en PARTIAL_DELIVERY pero no hay bolsas restantes
@@ -656,6 +862,20 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           handleFinalDelivery();
         } else {
           console.log('❌ No action available for delivery step');
+        }
+      }
+      // Click en COMPLETADO
+      else if (step.status === SERVICE_STATUS.COMPLETED) {
+        console.log('🔍 Click en COMPLETADO');
+        // Si estamos en DELIVERY, crear servicio de entrega completa y completar
+        if (normalizedServiceStatus === SERVICE_STATUS.DELIVERY) {
+          console.log('✅ Complete delivery from DELIVERY state');
+          handleCompleteDeliveryFromDelivery();
+        }
+        // Si estamos en PARTIAL_DELIVERY sin bolsas restantes, completar
+        else if (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags === 0) {
+          console.log('✅ Complete service from PARTIAL_DELIVERY');
+          handleFinalDelivery();
         }
       } else {
         console.log('❌ Conditions not met for transition');
@@ -685,12 +905,16 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 isCompleted && step.color === 'green' ? 'bg-green-100 border-green-500 text-green-600' :
                 isNextAvailable && step.color === 'indigo' ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' :
                 isInProcessAvailable && step.color === 'purple' ? 'bg-purple-500 border-purple-500 text-white hover:bg-purple-600' :
-                isEntregaAvailable && step.color === 'orange' ? 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600' :
+                isDeliveryAvailable && step.color === 'indigo' ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' :
+                isPartialDeliveryAvailable && step.color === 'orange' ? 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600' :
+                isCompletedAvailable && step.color === 'green' ? 'bg-green-500 border-green-500 text-white hover:bg-green-600' :
                 'bg-gray-100 border-gray-300 text-gray-400'}
-              ${isActive || isCompleted || isNextAvailable || isInProcessAvailable || isEntregaAvailable ? '' : 'opacity-50'}
+              ${isActive || isCompleted || isNextAvailable || isInProcessAvailable || isDeliveryAvailable || isPartialDeliveryAvailable || isCompletedAvailable ? '' : 'opacity-50'}
               ${(step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) ||
                 (step.status === SERVICE_STATUS.IN_PROCESS && normalizedServiceStatus === SERVICE_STATUS.LABELED && (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup)) ||
-                (step.status === SERVICE_STATUS.PARTIAL_DELIVERY && normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
+                (step.status === SERVICE_STATUS.DELIVERY && normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) ||
+                (step.status === SERVICE_STATUS.PARTIAL_DELIVERY && (normalizedServiceStatus === SERVICE_STATUS.DELIVERY || normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY)) ||
+                (step.status === SERVICE_STATUS.COMPLETED && (normalizedServiceStatus === SERVICE_STATUS.DELIVERY || (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags === 0))) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
             onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
@@ -719,9 +943,19 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 ¡Hacer clic para continuar!
               </p>
             )}
-            {isEntregaAvailable && !isActive && !isCompleted && (
-              <p className="text-xs text-orange-600 mt-1 font-medium animate-pulse">
+            {isDeliveryAvailable && !isActive && !isCompleted && (
+              <p className="text-xs text-indigo-600 mt-1 font-medium animate-pulse">
                 ¡Listo para entregar!
+              </p>
+            )}
+            {isPartialDeliveryAvailable && !isActive && !isCompleted && (
+              <p className="text-xs text-orange-600 mt-1 font-medium animate-pulse">
+                {normalizedServiceStatus === SERVICE_STATUS.DELIVERY ? '¡Hacer entrega parcial!' : '¡Continuar entrega!'}
+              </p>
+            )}
+            {isCompletedAvailable && !isActive && !isCompleted && (
+              <p className="text-xs text-green-600 mt-1 font-medium animate-pulse">
+                {normalizedServiceStatus === SERVICE_STATUS.DELIVERY ? '¡Entrega completa!' : '¡Completar servicio!'}
               </p>
             )}
           </div>

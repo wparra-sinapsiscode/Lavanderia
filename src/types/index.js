@@ -11,6 +11,7 @@ export const SERVICE_STATUS = {
   PICKED_UP: 'recogido',
   LABELED: 'rotulado',
   IN_PROCESS: 'en_proceso',
+  DELIVERY: 'entrega', // NUEVO: Estado de entrega (decisión)
   PARTIAL_DELIVERY: 'entrega_parcial',
   COMPLETED: 'completado',
   // Estados de entrega
