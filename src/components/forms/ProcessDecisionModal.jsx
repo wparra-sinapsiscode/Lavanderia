@@ -14,6 +14,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   const [selectedBags, setSelectedBags] = useState([]);
   const [bagsToDeliver, setBagsToDeliver] = useState(Math.ceil(service.bagCount / 2));
   const [partialPercentage, setPartialPercentage] = useState(50);
+  const [allDeliveredBags, setAllDeliveredBags] = useState([]);
 
   // Initialize bags array when component mounts
   useEffect(() => {
@@ -32,19 +33,22 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       
       // Combinar con bolsas del servicio original (si las tiene)
       const serviceDeliveredBags = service.deliveredBags || [];
-      const allDeliveredBags = [...new Set([...serviceDeliveredBags, ...alreadyDeliveredFromChildren])];
+      const calculatedDeliveredBags = [...new Set([...serviceDeliveredBags, ...alreadyDeliveredFromChildren])];
+      
+      // Actualizar el estado
+      setAllDeliveredBags(calculatedDeliveredBags);
       
       console.log('📦 Calculando bolsas entregadas:', {
         serviceId: service.id,
         fromService: serviceDeliveredBags,
         fromChildren: alreadyDeliveredFromChildren,
-        totalDelivered: allDeliveredBags,
+        totalDelivered: calculatedDeliveredBags,
         existingDeliveries: existingDeliveries.length
       });
       
       const bags = Array.from({ length: service.bagCount }, (_, index) => {
         const bagName = `Bolsa ${index + 1}`;
-        const isAlreadyDelivered = allDeliveredBags.includes(bagName);
+        const isAlreadyDelivered = calculatedDeliveredBags.includes(bagName);
         
         return {
           id: index + 1,
@@ -666,11 +670,19 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
                       <p className="text-sm text-gray-600">
                         Todas las {service.bagCount} bolsas están listas para entrega
                       </p>
+                      {allDeliveredBags.length > 0 && (
+                        <p className="text-sm text-red-600 mt-1">
+                          ⚠️ Ya existen entregas parciales ({allDeliveredBags.length} de {service.bagCount} bolsas).
+                          Use entrega parcial para las bolsas restantes.
+                        </p>
+                      )}
                     </div>
                   </div>
                   <Button
                     onClick={handleComplete}
-                    className="bg-green-600 hover:bg-green-700"
+                    disabled={allDeliveredBags.length > 0}
+                    className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={allDeliveredBags.length > 0 ? "Ya existen entregas parciales. Use entrega parcial para continuar." : "Marcar todas las bolsas como entregadas"}
                   >
                     Marcar Completado
                   </Button>
