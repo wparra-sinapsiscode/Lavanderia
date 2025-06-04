@@ -256,8 +256,8 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
         if (photoFiles.length > 0) {
           const photoResponse = await serviceService.uploadServicePhotos(service.id, photoFiles, 'labeling');
           
-          if (photoResponse.success && photoResponse.data && photoResponse.data.photoUrls) {
-            uploadedPhotoUrls = photoResponse.data.photoUrls;
+          if (photoResponse.success && photoResponse.data && photoResponse.data.photos) {
+            uploadedPhotoUrls = photoResponse.data.photos;
           }
         }
         
