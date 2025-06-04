@@ -83,8 +83,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     },
     {
       status: SERVICE_STATUS.PARTIAL_DELIVERY,
-      title: 'Entrega Parcial',
-      description: 'Entrega parcial realizada',
+      title: 'Entrega',
+      description: 'Entrega de bolsas al cliente',
       icon: Package,
       color: 'orange'
     },
@@ -407,8 +407,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const hasPhotosFromPickup = service.photos && service.photos.length > 0;
     
     const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && 
-      (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup || 
-       (normalizedServiceStatus === SERVICE_STATUS.LABELED));
+      normalizedServiceStatus === SERVICE_STATUS.LABELED &&
+      (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup);
+    
+    // Check if ENTREGA (PARTIAL_DELIVERY) should be available when service is IN_PROCESS
+    const isEntregaAvailable = step.status === SERVICE_STATUS.PARTIAL_DELIVERY && 
+      normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS;
     
     // Handler para clicks en los estados
     const handleStepClick = () => {
@@ -430,11 +434,17 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       }
       // Click en EN PROCESO - actualizar directamente el estado si tiene datos de rotulado
       else if (step.status === SERVICE_STATUS.IN_PROCESS && 
-        (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup || normalizedServiceStatus === SERVICE_STATUS.LABELED)) {
+        normalizedServiceStatus === SERVICE_STATUS.LABELED &&
+        (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup)) {
         console.log('✅ Calling handleStatusUpdateToInProcess');
         handleStatusUpdateToInProcess();
+      }
+      // Click en ENTREGA - mostrar modal de decisión cuando está en IN_PROCESS
+      else if (step.status === SERVICE_STATUS.PARTIAL_DELIVERY && normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
+        console.log('✅ Opening delivery decision modal');
+        setShowProcessDecision(true);
       } else {
-        console.log('❌ Conditions not met for IN_PROCESS transition');
+        console.log('❌ Conditions not met for transition');
       }
     };
     
@@ -461,10 +471,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 isCompleted && step.color === 'green' ? 'bg-green-100 border-green-500 text-green-600' :
                 isNextAvailable && step.color === 'indigo' ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' :
                 isInProcessAvailable && step.color === 'purple' ? 'bg-purple-500 border-purple-500 text-white hover:bg-purple-600' :
+                isEntregaAvailable && step.color === 'orange' ? 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600' :
                 'bg-gray-100 border-gray-300 text-gray-400'}
-              ${isActive || isCompleted || isNextAvailable || isInProcessAvailable ? '' : 'opacity-50'}
+              ${isActive || isCompleted || isNextAvailable || isInProcessAvailable || isEntregaAvailable ? '' : 'opacity-50'}
               ${(step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) ||
-                (step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup || normalizedServiceStatus === SERVICE_STATUS.LABELED)) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
+                (step.status === SERVICE_STATUS.IN_PROCESS && normalizedServiceStatus === SERVICE_STATUS.LABELED && (hasLabelData || hasPhotoDataFromLabels || hasPhotosFromService || hasPhotosFromPickup)) ||
+                (step.status === SERVICE_STATUS.PARTIAL_DELIVERY && normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
             onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
@@ -491,6 +503,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             {isInProcessAvailable && !isActive && !isCompleted && (
               <p className="text-xs text-purple-600 mt-1 font-medium animate-pulse">
                 ¡Hacer clic para continuar!
+              </p>
+            )}
+            {isEntregaAvailable && !isActive && !isCompleted && (
+              <p className="text-xs text-orange-600 mt-1 font-medium animate-pulse">
+                ¡Listo para entregar!
               </p>
             )}
           </div>
@@ -525,7 +542,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                     : (service.hotel || 'No especificado')}
                 </p>
                 <p className="text-sm text-gray-600">
-                  <strong>Registrado:</strong> {formatDate(service.timestamp)}
+                  <strong>Registrado:</strong> {service.createdAt || service.timestamp ? formatDate(service.createdAt || service.timestamp) : 'Fecha no disponible'}
                 </p>
               </div>
             </div>
@@ -569,6 +586,20 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                       </div>
                     );
                   }
+                  
+                  if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm">
+                        <div className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-medium">
+                          ✓ En proceso
+                        </div>
+                        <div className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full font-medium animate-pulse">
+                          → Listo para "Entrega"
+                        </div>
+                      </div>
+                    );
+                  }
+                  
                   return null;
                 })()}
               </div>
@@ -601,126 +632,6 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             </div>
           </div>
 
-          {/* Progress Info */}
-          {true && (
-            <Card className="mb-6">
-              <Card.Content className="p-4">
-                <h5 className="font-medium text-gray-900 mb-2">
-                  Información del Progreso
-                </h5>
-                <p className="text-sm text-gray-600 mb-3">
-                  Los estados cambian automáticamente cuando se completan las acciones correspondientes:
-                </p>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• <strong>Repartidor en Camino:</strong> Al iniciar la ruta</li>
-                  <li>• <strong>Recogido:</strong> Al completar el formulario de recogida</li>
-                  <li>• <strong>Rotulado:</strong> Al completar el formulario de rotulado</li>
-                  <li>• <strong>En Proceso:</strong> Cuando inicia el proceso de lavado</li>
-                  <li>• <strong>Completado:</strong> Al registrar la entrega final</li>
-                </ul>
-                
-                {/* Requirements Validation */}
-                {!validateStatusRequirements(selectedStatus) && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <div className="flex items-center">
-                      <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center mr-2">
-                        <span className="text-white text-xs font-bold">!</span>
-                      </div>
-                      <h6 className="text-sm font-medium text-red-800">Requisitos Faltantes</h6>
-                    </div>
-                    <p className="text-sm text-red-700 mt-1">
-                      {getStatusRequirementMessage(selectedStatus)}
-                    </p>
-                  </div>
-                )}
-                
-                {/* Partial Delivery Options */}
-                {selectedStatus === SERVICE_STATUS.PARTIAL_DELIVERY && (
-                  <div className="mb-6">
-                    <h6 className="text-md font-medium text-gray-900 mb-4">
-                      Configuración de Entrega Parcial
-                    </h6>
-                    
-                    {/* Quick Selection */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Cantidad de Bolsas a Entregar
-                      </label>
-                      <div className="flex items-center space-x-4">
-                        <input
-                          type="number"
-                          min="1"
-                          max={service.bagCount}
-                          value={bagsToDeliver}
-                          onChange={(e) => handleBagsToDeliverChange(parseInt(e.target.value) || 0)}
-                          className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                        />
-                        <span className="text-sm text-gray-600">
-                          de {service.bagCount} bolsas totales ({partialPercentage}%)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Individual Bag Selection */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Selección Individual de Bolsas
-                      </label>
-                      <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3">
-                        {selectedBags.map((bag) => (
-                          <div
-                            key={bag.id}
-                            className={`
-                              flex items-center justify-center p-2 rounded-md border-2 cursor-pointer transition-all text-xs font-medium
-                              ${bag.delivered 
-                                ? 'bg-green-100 border-green-500 text-green-700' 
-                                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
-                              }
-                            `}
-                            onClick={() => handleBagToggle(bag.id)}
-                          >
-                            <Package className="h-3 w-3 mr-1" />
-                            {bag.id}
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Haz clic en las bolsas para seleccionar/deseleccionar las que se van a entregar
-                      </p>
-                    </div>
-
-                    {/* Summary */}
-                    <div className="bg-blue-50 p-3 rounded-md">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">
-                          <strong>Para entregar:</strong> {selectedBags.filter(b => b.delivered).map(b => `Bolsa ${b.id}`).join(', ') || 'Ninguna'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm mt-1">
-                        <span className="text-gray-700">
-                          <strong>Pendientes:</strong> {selectedBags.filter(b => !b.delivered).map(b => `Bolsa ${b.id}`).join(', ') || 'Ninguna'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Notes */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Notas adicionales (opcional)
-                  </label>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Agregar observaciones sobre el cambio de estado..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                    rows="3"
-                  />
-                </div>
-              </Card.Content>
-            </Card>
-          )}
 
           {/* Service Details */}
           <Card className="mb-6">
@@ -758,9 +669,96 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 </div>
               )}
 
+              {/* Service Timeline/History */}
+              <div className="mt-4">
+                <p className="text-gray-500 text-sm mb-2">Historial del Servicio</p>
+                <div className="space-y-2">
+                  {(() => {
+                    const timeline = [];
+                    
+                    // 1. Creación del servicio
+                    if (service.createdAt || service.timestamp) {
+                      timeline.push({
+                        date: service.createdAt || service.timestamp,
+                        icon: '📅',
+                        text: `Servicio registrado para ${service.guestName} - Hab. ${service.roomNumber}`
+                      });
+                    }
+                    
+                    // 2. Asignación a repartidor (si existe)
+                    if (service.repartidorId && service.repartidor) {
+                      const repartidorName = typeof service.repartidor === 'object' ? service.repartidor.name : service.repartidor;
+                      timeline.push({
+                        date: service.assignedDate || service.createdAt,
+                        icon: '🚛',
+                        text: `Asignado a ${repartidorName}`
+                      });
+                    }
+                    
+                    // 3. Recogida
+                    if (service.pickupDate && service.status !== 'PENDING_PICKUP' && service.status !== 'ASSIGNED_TO_ROUTE') {
+                      const weightText = service.weight ? ` - ${service.weight}kg` : '';
+                      const repartidorName = typeof service.repartidor === 'object' ? service.repartidor.name : (service.repartidor || 'Repartidor');
+                      timeline.push({
+                        date: service.pickupDate,
+                        icon: '📦',
+                        text: `Recogido por ${repartidorName}${weightText}, ${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}`
+                      });
+                    }
+                    
+                    // 4. Rotulado
+                    if (service.labeledDate && (service.status === 'LABELED' || service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED')) {
+                      const photoCount = service.labelingPhotos?.length || service.photos?.length || 0;
+                      const photoText = photoCount > 0 ? ` con ${photoCount} foto${photoCount !== 1 ? 's' : ''}` : '';
+                      timeline.push({
+                        date: service.labeledDate,
+                        icon: '🏷️',
+                        text: `Rotulado completado${photoText}`
+                      });
+                    }
+                    
+                    // 5. En proceso
+                    if (service.processStartDate && (service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED')) {
+                      timeline.push({
+                        date: service.processStartDate,
+                        icon: '⚙️',
+                        text: 'Proceso de lavandería iniciado'
+                      });
+                    }
+                    
+                    // 6. Entrega
+                    if (service.deliveryDate && (service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED')) {
+                      const deliveryType = service.status === 'PARTIAL_DELIVERY' ? 'parcial' : 'completa';
+                      timeline.push({
+                        date: service.deliveryDate,
+                        icon: '✅',
+                        text: `Entrega ${deliveryType} realizada`
+                      });
+                    }
+                    
+                    // Ordenar por fecha
+                    timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    return timeline.map((item, index) => (
+                      <div key={index} className="flex items-start space-x-2 text-xs">
+                        <span className="text-sm">{item.icon}</span>
+                        <div className="flex-1">
+                          <span className="text-gray-500">
+                            {formatDate(item.date)}
+                          </span>
+                          <span className="text-gray-700 ml-2">
+                            {item.text}
+                          </span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
               {service.internalNotes && (
                 <div className="mt-4">
-                  <p className="text-gray-500 text-sm">Historial de Cambios</p>
+                  <p className="text-gray-500 text-sm">Notas Técnicas</p>
                   <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded mt-1 max-h-32 overflow-y-auto">
                     {service.internalNotes.split('|').map((note, index) => (
                       <div key={index} className="mb-1">
