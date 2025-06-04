@@ -317,6 +317,7 @@ const Reports = () => {
         bolsas: s.bagCount,
         fechaOrden: s.timestamp,
         fechaRecojo: s.pickupDate,
+        fechaProceso: s.processStartDate,
         fechaEntrega: s.deliveryDate,
         repartidor: s.repartidor,
         prioridad: s.priority

@@ -462,6 +462,13 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
 
   // Function specifically for transitioning to IN_PROCESS
   const handleStatusUpdateToInProcess = async () => {
+    console.log('🔧 DEBUG: Iniciando handleStatusUpdateToInProcess', {
+      serviceId: service.id,
+      currentStatus: service.status,
+      currentProcessStartDate: service.processStartDate,
+      timestamp: new Date().toISOString()
+    });
+    
     try {
       // Intentar actualizar primero en la API
       const apiResponse = await serviceService.updateServiceStatus(service.id, {
@@ -469,8 +476,17 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
         internalNotes: `Proceso de lavandería iniciado - ${new Date().toLocaleString('es-PE')}`
       });
 
+      console.log('🔧 DEBUG: Respuesta de API:', {
+        success: apiResponse?.success,
+        data: apiResponse?.data,
+        error: apiResponse?.error
+      });
+
       if (apiResponse && apiResponse.success) {
         console.log('Estado actualizado exitosamente en la API');
+        
+        // IMPORTANTE: El backend NO guarda processStartDate, así que SIEMPRE actualizamos localStorage
+        console.log('🔧 DEBUG: Forzando actualización de localStorage porque backend no guarda processStartDate');
         
         // TAMBIÉN actualizar en localStorage para mantener sincronización
         const services = serviceStorage.getServices();
@@ -486,10 +502,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 ` | Estado actualizado a En Proceso - ${new Date().toLocaleString('es-PE')} | Proceso de lavandería iniciado`
             };
 
-            console.log('✅ Servicio actualizado TAMBIÉN en localStorage:', {
-              id: updatedService.id,
+            console.log('🔧 DEBUG: Guardando en localStorage con processStartDate:', {
+              serviceId: updatedService.id,
               status: updatedService.status,
-              processStartDate: updatedService.processStartDate
+              processStartDate: updatedService.processStartDate,
+              now: now,
+              internalNotes: updatedService.internalNotes
             });
 
             return updatedService;
@@ -497,7 +515,17 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           return s;
         });
 
+        console.log('🔧 DEBUG: Guardando servicios actualizados en localStorage');
         serviceStorage.setServices(updatedServices);
+        
+        // Verificar que se guardó correctamente
+        const verifyServices = serviceStorage.getServices();
+        const verifiedService = verifyServices.find(s => s.id === service.id);
+        console.log('🔧 DEBUG: Verificación después de guardar:', {
+          serviceId: service.id,
+          savedProcessStartDate: verifiedService?.processStartDate,
+          savedStatus: verifiedService?.status
+        });
       } else {
         throw new Error('Error al actualizar en la API');
       }
@@ -518,10 +546,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
               ` | Estado actualizado a En Proceso - ${new Date().toLocaleString('es-PE')} | Proceso de lavandería iniciado`
           };
 
-          console.log('✅ Servicio actualizado a EN_PROCESO:', {
-            id: updatedService.id,
+          console.log('🔧 DEBUG: Fallback - Servicio actualizado localmente:', {
+            serviceId: updatedService.id,
             status: updatedService.status,
             processStartDate: updatedService.processStartDate,
+            now: now,
             notes: updatedService.internalNotes
           });
 
@@ -538,8 +567,15 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       'El servicio ha pasado a estado "En Proceso" - La lavandería puede comenzar el procesamiento'
     );
     
+    // IMPORTANTE: Notificar al componente padre para que recargue el servicio
+    console.log('🔧 DEBUG: Notificando actualización de estado al componente padre');
     onStatusUpdated();
-    onClose();
+    
+    // Pequeño delay para asegurar que el padre actualice antes de cerrar
+    setTimeout(() => {
+      console.log('🔧 DEBUG: Cerrando modal después de actualización');
+      onClose();
+    }, 100);
   };
 
   const StatusStep = ({ step, index, isActive, isCompleted, isSelected }) => {
@@ -921,41 +957,13 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                       });
                     }
                     
-                    // 5. En proceso - mejorar detección
-                    if (service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED') {
-                      // Si hay processStartDate, usar esa fecha
-                      if (service.processStartDate) {
-                        timeline.push({
-                          date: service.processStartDate,
-                          icon: '⚙️',
-                          text: 'Proceso de lavandería iniciado'
-                        });
-                      } else {
-                        // Si no hay processStartDate, buscar en internalNotes
-                        if (service.internalNotes && service.internalNotes.includes('Estado actualizado a En Proceso')) {
-                          const notes = service.internalNotes.split('|');
-                          const processNote = notes.find(note => note.includes('Estado actualizado a En Proceso'));
-                          if (processNote) {
-                            // Extraer fecha del note si es posible
-                            const match = processNote.match(/(\d{1,2}\/\d{1,2}\/\d{4},?\s*\d{1,2}:\d{2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-                            if (match) {
-                              try {
-                                const dateStr = match[1];
-                                const date = new Date(dateStr);
-                                if (!isNaN(date.getTime())) {
-                                  timeline.push({
-                                    date: date.toISOString(),
-                                    icon: '⚙️',
-                                    text: 'Proceso de lavandería iniciado'
-                                  });
-                                }
-                              } catch (e) {
-                                console.warn('Error parsing process date:', e);
-                              }
-                            }
-                          }
-                        }
-                      }
+                    // 5. En proceso
+                    if ((service.status === 'IN_PROCESS' || service.status === 'PARTIAL_DELIVERY' || service.status === 'COMPLETED') && service.processStartDate) {
+                      timeline.push({
+                        date: service.processStartDate,
+                        icon: '⚙️',
+                        text: 'Proceso de lavandería iniciado'
+                      });
                     }
                     
                     // 6. Entregas parciales (extraer del internalNotes)
