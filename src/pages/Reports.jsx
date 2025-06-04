@@ -34,9 +34,22 @@ const Reports = () => {
   const [hotels, setHotels] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [selectedTab, setSelectedTab] = useState('operations');
-  const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+  const [dateRange, setDateRange] = useState(() => {
+    // Usar fechas locales en lugar de UTC para evitar desfase de zona horaria
+    const today = new Date();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    
+    const formatLocalDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    return {
+      startDate: formatLocalDate(weekAgo),
+      endDate: formatLocalDate(today)
+    };
   });
 
   useEffect(() => {

@@ -385,6 +385,13 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
           
           if (routeUpdateResponse.success) {
             updatedService = routeUpdateResponse.data.service;
+            
+            // Subir fotos por separado para rutas (NUEVA FUNCIONALIDAD)
+            if (photos.length > 0) {
+              console.log(`Subiendo ${photos.length} fotos a la API desde ruta...`);
+              await serviceService.uploadServicePhotos(serviceId, photos.map(p => p.file), 'pickup');
+            }
+            
             updateSuccess = true;
             console.log('Servicio actualizado en ruta exitosamente');
           } else {
