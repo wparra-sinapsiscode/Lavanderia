@@ -4,6 +4,7 @@ import { SERVICE_STATUS } from '../../types';
 import { APP_CONFIG } from '../../constants';
 import { useNotifications } from '../../store/NotificationContext';
 import { getStatusText, assignRepartidorByZone } from '../../utils';
+import serviceService from '../../services/service.service';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import { CheckCircle, Package, X } from 'lucide-react';
@@ -106,20 +107,35 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     });
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     console.log('🎯 Procesando entrega completa para:', service.id);
+    console.log('🔧 DEBUG: handleComplete iniciado, stack trace:', new Error().stack);
     
-    // Crear servicio de entrega y completar el actual
-    createDeliveryService(service.bagCount, 'COMPLETE');
-    updateServiceStatus(SERVICE_STATUS.COMPLETED);
-    
-    success(
-      'Entrega Completa Procesada',
-      `Servicio completado. Se creó automáticamente el servicio de entrega para ${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}.`
-    );
-    
-    onStatusUpdated();
-    onClose();
+    try {
+      // Crear servicio de entrega y completar el actual
+      console.log('🔧 DEBUG: Llamando createDeliveryService...');
+      createDeliveryService(service.bagCount, 'COMPLETE');
+      
+      console.log('🔧 DEBUG: Llamando updateServiceStatus...');
+      const updateSuccess = await updateServiceStatus(SERVICE_STATUS.COMPLETED);
+      
+      if (updateSuccess) {
+        console.log('🔧 DEBUG: handleComplete completado exitosamente');
+        
+        success(
+          'Entrega Completa Procesada',
+          `Servicio completado. Se creó automáticamente el servicio de entrega para ${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}.`
+        );
+        
+        onStatusUpdated();
+        onClose();
+      } else {
+        throw new Error('No se pudo actualizar el estado del servicio');
+      }
+    } catch (error) {
+      console.error('❌ Error en handleComplete:', error);
+      error('Error', 'No se pudo completar el proceso de entrega');
+    }
   };
 
   const handlePartial = () => {
@@ -185,6 +201,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const createDeliveryService = (bagCount, deliveryType, selectedBagsData = []) => {
+    console.log('🔧 DEBUG: createDeliveryService INICIADO para:', service.id, 'tipo:', deliveryType);
     const services = serviceStorage.getServices();
     const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
     
@@ -341,27 +358,47 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     return deliveryService;
   };
 
-  const updateServiceStatus = (newStatus, additionalData = {}) => {
-    console.log('🔄 Actualizando estado del servicio:', {
+  const updateServiceStatus = async (newStatus, additionalData = {}) => {
+    console.log('🔄 Actualizando estado del servicio en API:', {
       serviceId: service.id,
       fromStatus: service.status,
       toStatus: newStatus,
       additionalData
     });
 
-    const services = serviceStorage.getServices();
-    
-    // Verificar si el servicio existe en localStorage
-    const serviceExists = services.find(s => s.id === service.id);
-    if (!serviceExists) {
-      console.warn('⚠️ Servicio no encontrado en localStorage, agregándolo:', service.id);
-      // Agregar el servicio si no existe
-      services.push(service);
-    }
-    
-    const updatedServices = services.map(s => {
-      if (s.id === service.id) {
-        const updatedService = {
+    try {
+      // 🎯 ACTUALIZAR EN LA BASE DE DATOS PRIMERO
+      const apiResponse = await serviceService.updateServiceStatus(service.id, {
+        status: newStatus,
+        internalNotes: `Estado actualizado a ${getStatusText(newStatus)} - ${new Date().toLocaleString('es-PE')}`
+      });
+
+      if (apiResponse && apiResponse.success) {
+        console.log('✅ Estado actualizado exitosamente en API:', apiResponse);
+        return true;
+      } else {
+        throw new Error('Error en respuesta de API');
+      }
+    } catch (apiError) {
+      console.warn('⚠️ Error actualizando en API, fallback a localStorage:', apiError);
+      
+      // FALLBACK: Actualizar en localStorage solo si API falla
+      let services = serviceStorage.getServices();
+      
+      // Verificar si el servicio existe en localStorage
+      const serviceExists = services.find(s => s.id === service.id);
+      if (!serviceExists) {
+        console.warn('⚠️ Servicio no encontrado en localStorage, agregándolo:', service.id);
+        services.push({
+          ...service,
+          updatedAt: service.updatedAt || new Date().toISOString(),
+          internalNotes: service.internalNotes || ''
+        });
+      }
+      
+      const updatedServices = services.map(s => {
+        if (s.id === service.id) {
+          const updatedService = {
           ...s,
           status: newStatus,
           updatedAt: new Date().toISOString(),
@@ -481,6 +518,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     
     // Retornar éxito
     return true;
+    } // Cerrar el catch (apiError) block
   };
 
   return (

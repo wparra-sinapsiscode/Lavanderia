@@ -827,12 +827,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
         console.log('✅ Calling handleStatusUpdateToInProcess');
         handleStatusUpdateToInProcess();
       }
-      // Click en ENTREGA (nuevo estado DELIVERY)
+      // Click en ENTREGA - abrir modal directamente (sin cambiar estado)
       else if (step.status === SERVICE_STATUS.DELIVERY) {
-        console.log('🔍 Click en ENTREGA desde IN_PROCESS');
+        console.log('🔍 Click en ENTREGA desde IN_PROCESS - abriendo ProcessDecisionModal');
         if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
-          console.log('✅ Transitioning from IN_PROCESS to DELIVERY');
-          handleStatusUpdateToDelivery();
+          console.log('✅ Abriendo ProcessDecisionModal directamente desde IN_PROCESS');
+          setShowProcessDecision(true);
         }
       }
       // Click en ENTREGA PARCIAL
@@ -945,7 +945,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             )}
             {isDeliveryAvailable && !isActive && !isCompleted && (
               <p className="text-xs text-indigo-600 mt-1 font-medium animate-pulse">
-                ¡Listo para entregar!
+                ¡Hacer clic para decidir!
               </p>
             )}
             {isPartialDeliveryAvailable && !isActive && !isCompleted && (
@@ -1042,7 +1042,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                           ✓ En proceso
                         </div>
                         <div className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full font-medium animate-pulse">
-                          → Listo para "Entrega"
+                          → Hacer clic en "Entrega" para decidir
                         </div>
                       </div>
                     );
