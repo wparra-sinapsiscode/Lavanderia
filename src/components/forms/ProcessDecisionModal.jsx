@@ -9,7 +9,7 @@ import Card from '../ui/Card';
 import { CheckCircle, Package, X } from 'lucide-react';
 
 const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
-  const { success } = useNotifications();
+  const { success, error } = useNotifications();
   const [selectedBags, setSelectedBags] = useState([]);
   const [bagsToDeliver, setBagsToDeliver] = useState(Math.ceil(service.bagCount / 2));
   const [partialPercentage, setPartialPercentage] = useState(50);
@@ -60,23 +60,53 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
   };
 
   const handleComplete = () => {
+    console.log('🎯 Procesando entrega completa para:', service.id);
+    
     // Crear servicio de entrega y completar el actual
     createDeliveryService(service.bagCount, 'COMPLETE');
     updateServiceStatus(SERVICE_STATUS.COMPLETED);
+    
+    success(
+      'Entrega Completa Procesada',
+      `Servicio completado. Se creó automáticamente el servicio de entrega para ${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}.`
+    );
+    
+    onStatusUpdated();
+    onClose();
   };
 
   const handlePartial = () => {
     if (bagsToDeliver === 0) {
-      alert('Debes seleccionar al menos una bolsa para entrega parcial');
+      error('Error', 'Debes seleccionar al menos una bolsa para entrega parcial');
       return;
     }
+    
+    console.log('🎯 Procesando entrega parcial para:', service.id, 'Bolsas:', bagsToDeliver);
+    
     // Crear servicio de entrega para las bolsas entregadas
     const deliveredBags = selectedBags.filter(bag => bag.delivered);
-    createDeliveryService(deliveredBags.length, 'PARTIAL');
-    updateServiceStatus(SERVICE_STATUS.PARTIAL_DELIVERY);
+    const remainingBags = selectedBags.filter(bag => !bag.delivered);
+    
+    // Crear el servicio de entrega con las bolsas seleccionadas
+    createDeliveryService(deliveredBags.length, 'PARTIAL', deliveredBags);
+    
+    // Actualizar el servicio original con información de entrega parcial
+    updateServiceStatus(SERVICE_STATUS.PARTIAL_DELIVERY, {
+      deliveredBags: deliveredBags.map(bag => bag.number),
+      remainingBags: remainingBags.map(bag => bag.number),
+      partialDeliveryPercentage: partialPercentage
+    });
+    
+    success(
+      'Entrega Parcial Procesada',
+      `Se creó servicio de entrega para ${bagsToDeliver} de ${service.bagCount} bolsas (${partialPercentage}%). El servicio continúa activo para las ${remainingBags.length} bolsas restantes.`
+    );
+    
+    onStatusUpdated();
+    onClose();
   };
 
-  const createDeliveryService = (bagCount, deliveryType) => {
+  const createDeliveryService = (bagCount, deliveryType, selectedBagsData = []) => {
     const services = serviceStorage.getServices();
     const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
     
@@ -85,6 +115,20 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     
     // Generar ID único para el servicio de entrega
     const deliveryServiceId = `delivery-${service.id}-${Date.now()}`;
+    
+    console.log('🚛 Creando servicio de entrega:', {
+      originalServiceId: service.id,
+      deliveryServiceId,
+      bagCount,
+      deliveryType,
+      selectedBags: selectedBagsData.map(b => b.number),
+      assignedRepartidor: assignedRepartidor?.name
+    });
+    
+    // Calcular peso proporcional para entrega parcial
+    const proportionalWeight = deliveryType === 'COMPLETE' 
+      ? service.weight 
+      : service.weight ? (parseFloat(service.weight) * (bagCount / service.bagCount)).toFixed(1) : null;
     
     // Crear el nuevo servicio de entrega
     const deliveryService = {
@@ -97,7 +141,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       
       // Información de entrega
       bagCount: bagCount,
-      weight: deliveryType === 'COMPLETE' ? service.weight : (service.weight * (bagCount / service.bagCount)).toFixed(1),
+      weight: proportionalWeight,
       
       // Información de proceso
       observations: `Servicio de entrega - ${deliveryType === 'COMPLETE' ? 'Completa' : 'Parcial'} | Servicio origen: ${service.id}`,
@@ -105,7 +149,7 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       priority: service.priority || 'NORMAL',
       
       // Fechas
-      pickupDate: service.deliveryDate || new Date().toISOString(), // Fecha de "recogida" desde lavandería
+      pickupDate: new Date().toISOString(), // Fecha de "recogida" desde lavandería
       estimatedPickupDate: new Date().toISOString(),
       labeledDate: new Date().toISOString(), // Ya está procesado
       deliveryDate: null,
@@ -115,7 +159,8 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       status: 'READY_FOR_DELIVERY',
       
       // Datos del servicio de entrega
-      photos: service.labelingPhotos || [], // Fotos de los rótulos como referencia
+      photos: service.labelingPhotos || service.photos || [], // Fotos de los rótulos como referencia
+      labelingPhotos: service.labelingPhotos || [], // Fotos específicas de rotulado
       signature: null,
       collectorName: null, // Se llenará cuando alguien recoja
       geolocation: null,
@@ -128,12 +173,23 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       price: service.price || null,
       pickupTimeSlot: null,
       customerNotes: `Entrega de servicio de lavandería procesado`,
-      internalNotes: `[${new Date().toLocaleString('es-PE')}] Servicio de entrega creado automáticamente desde ${service.id} | Tipo: ${deliveryType} | Bolsas: ${bagCount}/${service.bagCount}`,
+      
+      // Notas internas detalladas
+      internalNotes: [
+        `[${new Date().toLocaleString('es-PE')}] Servicio de entrega creado automáticamente`,
+        `Servicio origen: ${service.id}`,
+        `Tipo: ${deliveryType} (${bagCount}/${service.bagCount} bolsas)`,
+        deliveryType === 'PARTIAL' ? `Bolsas para entregar: ${selectedBagsData.map(b => b.number).join(', ')}` : '',
+        `Cliente: ${service.guestName} - Hab. ${service.roomNumber}`,
+        `Hotel: ${typeof service.hotel === 'object' ? service.hotel.name : service.hotel}`,
+        assignedRepartidor ? `Repartidor asignado: ${assignedRepartidor.name}` : 'Sin repartidor asignado'
+      ].filter(Boolean).join(' | '),
       
       // Campos específicos de entrega
       originalServiceId: service.id, // Referencia al servicio original
       serviceType: 'DELIVERY', // Tipo de servicio
       isDeliveryService: true, // Flag para identificar servicios de entrega
+      deliveryBags: selectedBagsData.map(b => b.number), // Bolsas específicas para entregar
       
       // Metadatos
       createdAt: new Date().toISOString(),
@@ -145,10 +201,18 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     const updatedServices = [...services, deliveryService];
     serviceStorage.setServices(updatedServices);
     
-    console.log(`✅ Servicio de entrega creado: ${deliveryServiceId}`);
+    console.log(`✅ Servicio de entrega creado:`, {
+      id: deliveryServiceId,
+      bagCount,
+      deliveryType,
+      bags: selectedBagsData.map(b => b.number),
+      status: 'READY_FOR_DELIVERY'
+    });
+    
+    return deliveryService;
   };
 
-  const updateServiceStatus = (newStatus) => {
+  const updateServiceStatus = (newStatus, additionalData = {}) => {
     const services = serviceStorage.getServices();
     const updatedServices = services.map(s => {
       if (s.id === service.id) {
@@ -161,17 +225,21 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
 
         // Handle partial delivery with bag details
         if (newStatus === SERVICE_STATUS.PARTIAL_DELIVERY) {
-          const deliveredBags = selectedBags.filter(bag => bag.delivered);
-          updatedService.partialDeliveryPercentage = partialPercentage;
-          updatedService.deliveredBags = deliveredBags.map(bag => bag.number);
-          updatedService.remainingBags = selectedBags.filter(bag => !bag.delivered).map(bag => bag.number);
-          updatedService.internalNotes += ` | Entrega parcial: ${bagsToDeliver}/${service.bagCount} bolsas (${partialPercentage}%) | Entregadas: ${deliveredBags.map(b => b.number).join(', ')}`;
+          const deliveredBags = additionalData.deliveredBags || selectedBags.filter(bag => bag.delivered).map(bag => bag.number);
+          const remainingBags = additionalData.remainingBags || selectedBags.filter(bag => !bag.delivered).map(bag => bag.number);
+          
+          updatedService.partialDeliveryPercentage = additionalData.partialDeliveryPercentage || partialPercentage;
+          updatedService.deliveredBags = deliveredBags;
+          updatedService.remainingBags = remainingBags;
+          updatedService.internalNotes += ` | Entrega parcial: ${deliveredBags.length}/${service.bagCount} bolsas (${updatedService.partialDeliveryPercentage}%) | Entregadas: ${deliveredBags.join(', ')}`;
         }
 
         // Add timestamps for specific statuses
         const now = new Date().toISOString();
         if (newStatus === SERVICE_STATUS.COMPLETED) {
           updatedService.deliveryDate = now;
+        } else if (newStatus === SERVICE_STATUS.PARTIAL_DELIVERY) {
+          updatedService.partialDeliveryDate = now;
         }
 
         return updatedService;
@@ -180,14 +248,6 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     });
 
     serviceStorage.setServices(updatedServices);
-    
-    success(
-      'Estado Actualizado',
-      `Servicio actualizado a: ${getStatusText(newStatus)}`
-    );
-    
-    onStatusUpdated();
-    onClose();
   };
 
   return (

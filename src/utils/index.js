@@ -29,6 +29,52 @@ export const formatDate = (date) => {
   }
 };
 
+/**
+ * Formats a date string from HTML date input (YYYY-MM-DD) to local date display
+ * 
+ * IMPORTANT: This function prevents the -1 day offset bug that occurs when using
+ * new Date(YYYY-MM-DD).toLocaleDateString() in timezones behind UTC.
+ * 
+ * The bug occurs because:
+ * 1. HTML date inputs return strings like "2025-06-04"
+ * 2. new Date("2025-06-04") creates a Date object at UTC midnight
+ * 3. In timezones like Lima (UTC-5), this becomes the previous day
+ * 4. User selects 04/06/2025 but sees "Rutas del 3/6/2025"
+ * 
+ * This function fixes it by parsing date components manually to create a local date.
+ * 
+ * @param {string} dateString - Date string in YYYY-MM-DD format (from HTML date input)
+ * @param {string} locale - Locale for formatting (default: 'es-PE')
+ * @returns {string} Formatted date string showing the correct date user selected
+ * 
+ * @example
+ * // User selects 04/06/2025 in date picker
+ * const selectedDate = "2025-06-04"; // From HTML input
+ * 
+ * // ❌ Wrong way (shows 3/6/2025 in Lima timezone):
+ * new Date(selectedDate).toLocaleDateString('es-PE')
+ * 
+ * // ✅ Correct way (shows 4/6/2025):
+ * formatLocalDate(selectedDate)
+ */
+export const formatLocalDate = (dateString, locale = 'es-PE') => {
+  if (!dateString) return 'Sin fecha';
+  
+  try {
+    // Parse the date components manually to avoid UTC timezone issues
+    const [year, month, day] = dateString.split('-');
+    const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
+    // Verify the date is valid
+    if (isNaN(localDate.getTime())) return 'Fecha inválida';
+    
+    return localDate.toLocaleDateString(locale);
+  } catch (error) {
+    console.error('Error al formatear fecha local:', error);
+    return 'Fecha inválida';
+  }
+};
+
 export const formatCurrency = (amount) => {
   return new Intl.NumberFormat('es-PE', {
     style: 'currency',

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { formatDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../utils';
+import { formatDate, formatLocalDate, getPriorityColor, sortServicesByPriority, getPickupStats, getServiceTypeColor, getServiceTypeText, isPickupService, isDeliveryService } from '../utils';
 import { SERVICE_STATUS, USER_ROLES } from '../types';
 import { SERVICE_STATUS_CONFIG } from '../constants';
 import routeService from '../services/route.service';
@@ -925,7 +925,7 @@ const Routes = () => {
         <Card>
           <Card.Header>
             <h3 className="text-lg font-semibold text-gray-900">
-              Resumen del {new Date(selectedDate).toLocaleDateString('es-PE')}
+              Resumen del {formatLocalDate(selectedDate)}
             </h3>
           </Card.Header>
           <Card.Content>
@@ -975,7 +975,7 @@ const Routes = () => {
       {/* All Routes */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          Rutas del {new Date(selectedDate).toLocaleDateString('es-PE')}
+          Rutas del {formatLocalDate(selectedDate)}
         </h2>
         
         {routes.length === 0 ? (
@@ -1044,7 +1044,7 @@ const Routes = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Fecha:</span>
-                        <span className="font-medium">{new Date(selectedRoute.date).toLocaleDateString('es-PE')}</span>
+                        <span className="font-medium">{formatLocalDate(selectedRoute.date)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Estado:</span>
