@@ -103,10 +103,26 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   // Normalizar el estado del servicio
   const normalizedServiceStatus = statusMapping[currentService.status] || currentService.status;
 
-  // Detectar estado de entregas parciales
-  const hasPartialDeliveries = currentService.deliveredBags && currentService.deliveredBags.length > 0;
+  // 🔍 CALCULAR BOLSAS ENTREGADAS DESDE SERVICIOS HIJOS (igual que ProcessDecisionModal)
+  const services = serviceStorage.getServices();
+  const existingDeliveries = services.filter(s => 
+    s.originalServiceId === currentService.id && 
+    s.isDeliveryService === true
+  );
+  
+  // Obtener todas las bolsas ya entregadas de servicios hijos
+  const alreadyDeliveredFromChildren = existingDeliveries.flatMap(delivery => 
+    delivery.deliveryBags || []
+  );
+  
+  // Combinar con bolsas del servicio original (si las tiene)
+  const serviceDeliveredBags = currentService.deliveredBags || [];
+  const allDeliveredBags = [...new Set([...serviceDeliveredBags, ...alreadyDeliveredFromChildren])];
+  
+  // Detectar estado de entregas parciales con datos consolidados
+  const hasPartialDeliveries = allDeliveredBags.length > 0;
   const totalBags = currentService.bagCount || 0;
-  const deliveredCount = currentService.deliveredBags?.length || 0;
+  const deliveredCount = allDeliveredBags.length; // Usar el total consolidado
   const remainingBags = totalBags - deliveredCount;
   const isPartialInProgress = normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags > 0;
   const hasAllBagsDelivered = deliveredCount >= totalBags;
@@ -119,7 +135,10 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     totalBags,
     deliveredCount,
     remainingBags,
-    deliveredBags: currentService.deliveredBags,
+    fromService: serviceDeliveredBags,
+    fromChildren: alreadyDeliveredFromChildren,
+    allDeliveredBags: allDeliveredBags,
+    existingDeliveries: existingDeliveries.length,
     isPartialInProgress
   });
 
