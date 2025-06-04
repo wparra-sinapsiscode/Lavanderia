@@ -45,6 +45,27 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   // Normalizar el estado del servicio
   const normalizedServiceStatus = statusMapping[service.status] || service.status;
 
+  // Detectar estado de entregas parciales
+  const hasPartialDeliveries = service.deliveredBags && service.deliveredBags.length > 0;
+  const totalBags = service.bagCount || 0;
+  const deliveredCount = service.deliveredBags?.length || 0;
+  const remainingBags = totalBags - deliveredCount;
+  const isPartialInProgress = normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags > 0;
+  const hasAllBagsDelivered = deliveredCount >= totalBags;
+  
+  // Debug logs para entender el estado
+  console.log('🔍 Estado de entregas:', {
+    serviceId: service.id,
+    normalizedServiceStatus,
+    hasPartialDeliveries,
+    totalBags,
+    deliveredCount,
+    remainingBags,
+    deliveredBags: service.deliveredBags,
+    isPartialInProgress
+  });
+
+  // AHORA sí podemos definir workflowSteps con las variables calculadas
   const workflowSteps = [
     {
       status: SERVICE_STATUS.PENDING_PICKUP,
@@ -83,10 +104,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     },
     {
       status: SERVICE_STATUS.PARTIAL_DELIVERY,
-      title: 'Entrega',
-      description: 'Entrega de bolsas al cliente',
-      icon: Package,
-      color: 'orange'
+      title: isPartialInProgress ? 'Entrega Final' : 'Entrega',
+      description: isPartialInProgress 
+        ? `Entregar ${remainingBags} bolsa${remainingBags !== 1 ? 's' : ''} restante${remainingBags !== 1 ? 's' : ''}` 
+        : 'Entrega de bolsas al cliente',
+      icon: isPartialInProgress ? CheckCircle : Package,
+      color: isPartialInProgress ? 'green' : 'orange'
     },
     {
       status: SERVICE_STATUS.COMPLETED,
@@ -186,6 +209,31 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     
     // Note: Auto-transition now happens in RotuladoForm when photos are added
   }, [service, normalizedServiceStatus]);
+
+  // 🔧 FIX: Detectar si el estado del servicio en localStorage es diferente al que tenemos
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      if (service?.id) {
+        const services = serviceStorage.getServices();
+        const currentServiceInStorage = services.find(s => s.id === service.id);
+        
+        if (currentServiceInStorage && currentServiceInStorage.status !== service.status) {
+          console.log('🔍 ServiceWorkflowModal: Detectado cambio de estado en localStorage:', {
+            serviceId: service.id,
+            modalStatus: service.status,
+            storageStatus: currentServiceInStorage.status,
+            modalUpdatedAt: service.updatedAt,
+            storageUpdatedAt: currentServiceInStorage.updatedAt
+          });
+          
+          // El componente padre debería manejar esta actualización
+          // Pero podemos detectar la discrepancia y loggear para debugging
+        }
+      }
+    }, 1000); // Verificar cada segundo
+    
+    return () => clearInterval(interval);
+  }, [service]);
 
   // Update percentage when bags selection changes
   React.useEffect(() => {
@@ -342,6 +390,76 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     onStatusUpdated();
   };
 
+  // Function for handling final delivery when partial deliveries exist
+  const handleFinalDelivery = async () => {
+    try {
+      // Pre-seleccionar bolsas restantes para la entrega final
+      const remainingBagNumbers = service.remainingBags || [];
+      const deliveredBagNumbers = service.deliveredBags || [];
+      
+      console.log('🚚 Iniciando entrega final:', {
+        totalBags,
+        deliveredCount,
+        remainingBags,
+        remainingBagNumbers,
+        deliveredBagNumbers
+      });
+      
+      // Si hay bolsas restantes por entregar O si ya todas están entregadas pero el estado no es COMPLETED
+      if (remainingBags > 0 || (remainingBags === 0 && normalizedServiceStatus !== SERVICE_STATUS.COMPLETED)) {
+        // Actualizar el servicio a COMPLETED
+        const services = serviceStorage.getServices();
+        const updatedServices = services.map(s => {
+          if (s.id === service.id) {
+            const now = new Date().toISOString();
+            const updatedService = {
+              ...s,
+              status: SERVICE_STATUS.COMPLETED,
+              deliveryDate: now,
+              updatedAt: now,
+              // Marcar todas las bolsas restantes como entregadas
+              deliveredBags: [...(s.deliveredBags || []), ...remainingBagNumbers],
+              remainingBags: [],
+              partialDeliveryPercentage: 100,
+              internalNotes: (s.internalNotes || '') + 
+                (remainingBags > 0 
+                  ? ` | Entrega final completada: ${remainingBagNumbers.join(', ')} - ${new Date().toLocaleString('es-PE')} | Todas las bolsas entregadas | Servicio completado al 100%`
+                  : ` | Servicio marcado como completado - ${new Date().toLocaleString('es-PE')} | Todas las bolsas previamente entregadas | Servicio completado al 100%`)
+            };
+            
+            console.log('✅ Servicio completado:', {
+              id: updatedService.id,
+              status: updatedService.status,
+              deliveredBags: updatedService.deliveredBags,
+              remainingBags: updatedService.remainingBags
+            });
+            
+            return updatedService;
+          }
+          return s;
+        });
+        
+        serviceStorage.setServices(updatedServices);
+        
+        success(
+          'Entrega Completada',
+          remainingBags > 0 
+            ? `¡Servicio completado! Se entregaron las ${remainingBags} bolsa${remainingBags !== 1 ? 's' : ''} restante${remainingBags !== 1 ? 's' : ''}`
+            : '¡Servicio completado! Todas las bolsas fueron entregadas'
+        );
+        
+        onStatusUpdated();
+        onClose();
+      } else {
+        // No hay bolsas restantes, mostrar mensaje
+        error('Sin bolsas pendientes', 'Todas las bolsas ya han sido entregadas');
+      }
+    } catch (error) {
+      console.error('Error en entrega final:', error);
+      error('Error en Entrega', 'No se pudo completar la entrega final');
+    }
+  };
+
   // Function specifically for transitioning to IN_PROCESS
   const handleStatusUpdateToInProcess = async () => {
     try {
@@ -475,10 +593,34 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
         console.log('✅ Calling handleStatusUpdateToInProcess');
         handleStatusUpdateToInProcess();
       }
-      // Click en ENTREGA - mostrar modal de decisión cuando está en IN_PROCESS
-      else if (step.status === SERVICE_STATUS.PARTIAL_DELIVERY && normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS) {
-        console.log('✅ Opening delivery decision modal');
-        setShowProcessDecision(true);
+      // Click en ENTREGA - lógica diferenciada según estado
+      else if (step.status === SERVICE_STATUS.PARTIAL_DELIVERY) {
+        console.log('🔍 Evaluando entrega:', {
+          normalizedServiceStatus,
+          hasPartialDeliveries,
+          deliveredCount,
+          remainingBags,
+          serviceDeliveredBags: service.deliveredBags
+        });
+        
+        // Si ya hay bolsas entregadas (desde cualquier estado), manejar entrega final
+        if (hasPartialDeliveries && remainingBags > 0) {
+          console.log('✅ Handling final delivery for remaining bags:', remainingBags);
+          handleFinalDelivery();
+        }
+        // Si no hay entregas previas y estamos en IN_PROCESS, primera entrega
+        else if (normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS && !hasPartialDeliveries) {
+          console.log('✅ Opening delivery decision modal for first delivery');
+          setShowProcessDecision(true);
+        }
+        // Si estamos en PARTIAL_DELIVERY pero no hay bolsas restantes
+        else if (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags === 0) {
+          console.log('✅ All bags delivered, completing service');
+          // Completar servicio automáticamente
+          handleFinalDelivery();
+        } else {
+          console.log('❌ No action available for delivery step');
+        }
       } else {
         console.log('❌ Conditions not met for transition');
       }
@@ -631,6 +773,32 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                         </div>
                         <div className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full font-medium animate-pulse">
                           → Listo para "Entrega"
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  if (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags > 0) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm">
+                        <div className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full font-medium">
+                          ✓ {deliveredCount}/{totalBags} entregadas
+                        </div>
+                        <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium animate-pulse">
+                          → Completar entrega ({remainingBags} restante${remainingBags !== 1 ? 's' : ''})
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  if (normalizedServiceStatus === SERVICE_STATUS.PARTIAL_DELIVERY && remainingBags === 0) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm">
+                        <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium">
+                          ✓ Todas las bolsas entregadas
+                        </div>
+                        <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-medium">
+                          Listo para completar
                         </div>
                       </div>
                     );

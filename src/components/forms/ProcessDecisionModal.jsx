@@ -173,12 +173,15 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       }
     }
     
-    // Esperar un momento antes de cerrar para que se procesen los cambios
+    // Llamar onStatusUpdated inmediatamente, luego cerrar
+    console.log('🔄 Notificando actualización de estado inmediatamente...');
+    onStatusUpdated();
+    
+    // Pequeño delay antes de cerrar para que el componente padre pueda actualizar
     setTimeout(() => {
-      console.log('🔄 Notificando actualización de estado...');
-      onStatusUpdated();
+      console.log('🔄 Cerrando ProcessDecisionModal...');
       onClose();
-    }, 200); // Más tiempo para asegurar que se procese
+    }, 100); // Delay mínimo solo para el cierre
   };
 
   const createDeliveryService = (bagCount, deliveryType, selectedBagsData = []) => {
@@ -407,8 +410,24 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
       updatedService: verifyUpdate?.status,
       updatedServiceId: verifyUpdate?.id,
       deliveredBags: verifyUpdate?.deliveredBags,
+      partialDeliveryPercentage: verifyUpdate?.partialDeliveryPercentage,
+      partialDeliveryDate: verifyUpdate?.partialDeliveryDate,
       savedSuccessfully: true
     });
+    
+    // Verificar que el estado realmente se guardó
+    setTimeout(() => {
+      const freshServices = serviceStorage.getServices();
+      const freshService = freshServices.find(s => s.id === service.id);
+      console.log('🔍 Verificación post-guardado:', {
+        serviceId: service.id,
+        statusInStorage: freshService?.status,
+        expectedStatus: newStatus,
+        statusMatches: freshService?.status === newStatus,
+        deliveredBagsInStorage: freshService?.deliveredBags,
+        timestamp: new Date().toISOString()
+      });
+    }, 50);
     
     // También actualizar en la API si es posible
     try {

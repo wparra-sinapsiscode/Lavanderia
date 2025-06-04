@@ -271,6 +271,20 @@ const Delivery = () => {
 
   const handleStatusUpdated = () => {
     loadDeliveryData();
+    
+    // 🔧 FIX: Actualizar también serviceForWorkflow si está abierto el modal
+    if (serviceForWorkflow) {
+      const services = serviceStorage.getServices();
+      const updatedService = services.find(s => s.id === serviceForWorkflow.id);
+      if (updatedService) {
+        console.log('🔄 Actualizando serviceForWorkflow con datos más recientes:', {
+          serviceId: serviceForWorkflow.id,
+          oldStatus: serviceForWorkflow.status,
+          newStatus: updatedService.status
+        });
+        setServiceForWorkflow(updatedService);
+      }
+    }
   };
 
 
