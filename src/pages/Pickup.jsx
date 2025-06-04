@@ -14,7 +14,7 @@ import GuestRegistrationForm from '../components/forms/GuestRegistrationForm';
 import ServiceWorkflowModal from '../components/forms/ServiceWorkflowModal';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { Truck, Clock, Package, MapPin, Plus, RefreshCw, UserCheck, GitBranch } from 'lucide-react';
+import { Truck, Clock, Package, MapPin, Plus, RefreshCw, UserCheck, GitBranch, Tag, Star, CheckCircle } from 'lucide-react';
 
 const Pickup = () => {
   const { user, isAdmin, isRepartidor } = useAuth();
@@ -737,11 +737,35 @@ const Pickup = () => {
                                 </div>
                               )
                             )
-                          ) : (
-                            // Servicios ya recogidos (PICKED_UP u otros estados)
+                          ) : service.status === 'PICKED_UP' ? (
                             <div className="flex items-center text-green-600">
                               <Package className="h-4 w-4 mr-1" />
                               <span>Recogido</span>
+                            </div>
+                          ) : service.status === 'LABELED' ? (
+                            <div className="flex items-center text-indigo-600">
+                              <Tag className="h-4 w-4 mr-1" />
+                              <span>Rotulado</span>
+                            </div>
+                          ) : service.status === 'IN_PROCESS' ? (
+                            <div className="flex items-center text-purple-600">
+                              <Star className="h-4 w-4 mr-1" />
+                              <span>En proceso</span>
+                            </div>
+                          ) : service.status === 'PARTIAL_DELIVERY' ? (
+                            <div className="flex items-center text-orange-600">
+                              <Package className="h-4 w-4 mr-1" />
+                              <span>Entrega parcial</span>
+                            </div>
+                          ) : service.status === 'COMPLETED' ? (
+                            <div className="flex items-center text-green-600">
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              <span>Completado</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center text-gray-600">
+                              <Clock className="h-4 w-4 mr-1" />
+                              <span>Estado desconocido</span>
                             </div>
                           )}
 

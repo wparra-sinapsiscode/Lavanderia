@@ -182,7 +182,10 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     // Cargar rótulos existentes si los hay
     const labels = bagLabelStorage.getBagLabelsByService(service.id);
     setExistingLabels(labels);
-  }, [service]);
+    
+    // Note: Auto-transition removed to give user more control
+    // The UI will clearly indicate when IN_PROCESS is available
+  }, [service, normalizedServiceStatus]);
 
   // Update percentage when bags selection changes
   React.useEffect(() => {
@@ -301,6 +304,73 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     onClose();
   };
 
+  // Auto status update function (similar to handleStatusUpdate but without UI interaction)
+  const handleAutoStatusUpdate = (newStatus, autoNote = '') => {
+    const services = serviceStorage.getServices();
+    const updatedServices = services.map(s => {
+      if (s.id === service.id) {
+        const updatedService = {
+          ...s,
+          status: newStatus,
+          internalNotes: (s.internalNotes || '') + 
+            ` | ${autoNote} - ${new Date().toLocaleString('es-PE')}`
+        };
+
+        // Add timestamps for specific statuses
+        const now = new Date().toISOString();
+        switch (newStatus) {
+          case SERVICE_STATUS.IN_PROCESS:
+            updatedService.processStartDate = now;
+            break;
+          case SERVICE_STATUS.COMPLETED:
+            updatedService.deliveryDate = now;
+            break;
+        }
+
+        return updatedService;
+      }
+      return s;
+    });
+
+    serviceStorage.setServices(updatedServices);
+    
+    success(
+      'Estado Actualizado Automáticamente',
+      `Servicio progresó automáticamente a: ${getStatusText(newStatus)}`
+    );
+    
+    onStatusUpdated();
+  };
+
+  // Function specifically for transitioning to IN_PROCESS
+  const handleStatusUpdateToInProcess = () => {
+    const services = serviceStorage.getServices();
+    const updatedServices = services.map(s => {
+      if (s.id === service.id) {
+        const updatedService = {
+          ...s,
+          status: SERVICE_STATUS.IN_PROCESS,
+          processStartDate: new Date().toISOString(),
+          internalNotes: (s.internalNotes || '') + 
+            ` | Proceso de lavandería iniciado - ${new Date().toLocaleString('es-PE')}`
+        };
+
+        return updatedService;
+      }
+      return s;
+    });
+
+    serviceStorage.setServices(updatedServices);
+    
+    success(
+      'Proceso Iniciado',
+      'El servicio ha pasado a estado "En Proceso" - La lavandería puede comenzar el procesamiento'
+    );
+    
+    onStatusUpdated();
+    onClose();
+  };
+
   const StatusStep = ({ step, index, isActive, isCompleted, isSelected }) => {
     const IconComponent = step.icon;
     const canProgress = canProgressTo(step.status);
@@ -310,10 +380,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     // Check if this is the next available step
     const isNextAvailable = step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS);
     
-    // Check if IN_PROCESS should be available (when service has rotulado data)
+    // Check if IN_PROCESS should be available (when service has rotulado data with photos)
     const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
     const hasLabelData = serviceLabels.length > 0 && serviceLabels.some(label => label.label && label.label.trim() !== '');
-    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && hasLabelData;
+    const hasPhotoData = serviceLabels.length > 0 && serviceLabels.some(label => label.photo && label.photo.trim() !== '');
+    const isInProcessAvailable = step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoData);
     
     // Handler para clicks en los estados
     const handleStepClick = () => {
@@ -321,9 +392,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       if (step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) {
         setShowRotuladoForm(true);
       }
-      // Click en EN PROCESO - mostrar modal de decisión si tiene datos de rotulado
-      else if (step.status === SERVICE_STATUS.IN_PROCESS && hasLabelData) {
-        setShowProcessDecision(true);
+      // Click en EN PROCESO - actualizar directamente el estado si tiene datos de rotulado
+      else if (step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoData)) {
+        handleStatusUpdateToInProcess();
       }
     };
     
@@ -353,7 +424,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 'bg-gray-100 border-gray-300 text-gray-400'}
               ${isActive || isCompleted || isNextAvailable || isInProcessAvailable ? '' : 'opacity-50'}
               ${(step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.LABELED || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS)) ||
-                (step.status === SERVICE_STATUS.IN_PROCESS && hasLabelData) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
+                (step.status === SERVICE_STATUS.IN_PROCESS && (hasLabelData || hasPhotoData)) ? 'cursor-pointer hover:scale-105' : 'cursor-default'}
             `}
             onClick={handleStepClick}
             title={requiresValidation && !isCompleted && !isActive ? requirementMessage : ''}
@@ -375,6 +446,11 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
             {requiresValidation && !isCompleted && !isActive && (
               <p className="text-xs text-red-500 mt-1 font-medium">
                 Faltan requisitos
+              </p>
+            )}
+            {isInProcessAvailable && !isActive && !isCompleted && (
+              <p className="text-xs text-purple-600 mt-1 font-medium animate-pulse">
+                ¡Hacer clic para continuar!
               </p>
             )}
           </div>
@@ -426,13 +502,35 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
           {/* Current Status */}
           <Card className="mb-6">
             <Card.Content className="p-4">
-              <div className="flex items-center space-x-3">
-                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || SERVICE_STATUS_CONFIG[normalizedServiceStatus]?.badgeClasses || getStatusColor(service.status)}`}>
-                  {SERVICE_STATUS_CONFIG[service.status]?.label || SERVICE_STATUS_CONFIG[normalizedServiceStatus]?.label || getStatusText(service.status)}
-                </span>
-                <span className="text-sm text-gray-500">
-                  Estado actual del servicio
-                </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${SERVICE_STATUS_CONFIG[service.status]?.badgeClasses || SERVICE_STATUS_CONFIG[normalizedServiceStatus]?.badgeClasses || getStatusColor(service.status)}`}>
+                    {SERVICE_STATUS_CONFIG[service.status]?.label || SERVICE_STATUS_CONFIG[normalizedServiceStatus]?.label || getStatusText(service.status)}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    Estado actual del servicio
+                  </span>
+                </div>
+                
+                {/* Next Step Available Notification */}
+                {(() => {
+                  const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
+                  const hasPhotoData = serviceLabels.length > 0 && serviceLabels.some(label => label.photo && label.photo.trim() !== '');
+                  
+                  if (normalizedServiceStatus === SERVICE_STATUS.LABELED && hasPhotoData) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm">
+                        <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium">
+                          ✓ Rotulado completo
+                        </div>
+                        <div className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-medium animate-pulse">
+                          → Listo para "En Proceso"
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </Card.Content>
           </Card>
