@@ -52,9 +52,22 @@ export const calculateMissingPrice = (service, hotel) => {
  * @param {string} serviceId - ID del servicio
  * @returns {boolean} true si ya existe transacción
  */
-export const serviceHasTransaction = (serviceId) => {
-  const transactions = financeStorage.getTransactions();
-  return transactions.some(t => t.serviceId === serviceId && t.type === 'INCOME');
+export const serviceHasTransaction = async (serviceId) => {
+  try {
+    // 🔧 CORRECCIÓN: Usar API en lugar de financeStorage
+    const response = await transactionService.getAllTransactions();
+    if (response.success && response.data) {
+      return response.data.some(t => 
+        (t.serviceId === serviceId || t.metadata?.serviceId === serviceId) && 
+        (t.type === 'income' || t.type === 'INCOME')
+      );
+    }
+    return false;
+  } catch (error) {
+    console.warn('Error verificando transacciones, asumiendo que no existe:', error);
+    // En caso de error, asumir que no existe para permitir crear una nueva
+    return false;
+  }
 };
 
 /**
@@ -64,38 +77,47 @@ export const serviceHasTransaction = (serviceId) => {
  * @param {number} amount - Monto de la transacción
  * @param {string} source - Origen (PICKUP, MIGRATION, etc)
  */
-export const createServiceTransaction = (service, hotel, amount, source = 'MIGRATION') => {
+export const createServiceTransaction = async (service, hotel, amount, source = 'MIGRATION') => {
   const transaction = {
-    id: `trans-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    type: 'INCOME',
+    type: 'income', // Usar minúsculas para compatibilidad con API
     amount: amount,
     description: `Servicio de lavandería - ${service.guestName} - Hab. ${service.roomNumber}`,
     date: service.pickupDate || service.createdAt || new Date().toISOString(),
-    paymentMethod: 'PENDIENTE',
-    incomeCategory: 'SERVICIO_LAVANDERIA',
+    paymentMethod: 'pending',
+    category: 'servicio_lavanderia',
     serviceId: service.id,
     hotelId: service.hotelId || hotel?.id,
     hotelName: hotel?.name || service.hotel,
-    createdAt: new Date().toISOString(),
     source: source, // Para identificar origen
-    notes: source === 'MIGRATION' ? 'Transacción creada por migración' : 'Transacción automática'
+    notes: source === 'MIGRATION' ? 'Transacción creada por migración' : 'Transacción automática',
+    metadata: {
+      serviceId: service.id,
+      guestName: service.guestName,
+      roomNumber: service.roomNumber,
+      source: source
+    }
   };
 
-  // ✅ Usar API en lugar de storage
+  // ✅ Usar API para crear la transacción
   try {
-    transactionService.createTransaction(transaction);
+    const response = await transactionService.createTransaction(transaction);
+    if (response.success) {
+      console.log('Transacción creada exitosamente:', response.data.id);
+      return response.data;
+    } else {
+      throw new Error(response.message || 'Error al crear transacción');
+    }
   } catch (error) {
     console.error('Error creando transacción:', error);
+    throw error;
   }
-  
-  return transaction;
 };
 
 /**
  * Migra servicios existentes sin precio y crea transacciones faltantes
  * @returns {Object} Resumen de la migración
  */
-export const migrateExistingServices = () => {
+export const migrateExistingServices = async () => {
   const services = serviceStorage.getServices();
   const hotels = hotelStorage.getHotels();
   
@@ -117,7 +139,7 @@ export const migrateExistingServices = () => {
            validStatuses.some(status => status.toLowerCase() === service.status.toLowerCase());
   });
 
-  servicesToProcess.forEach(service => {
+  for (const service of servicesToProcess) {
     try {
       results.totalProcessed++;
       
@@ -135,12 +157,14 @@ export const migrateExistingServices = () => {
         const calculatedPrice = calculateMissingPrice(service, hotel);
         
         // Actualizar el servicio con el nuevo precio
-        serviceStorage.updateService(service.id, {
+        const updatedService = {
           ...service,
           price: calculatedPrice,
           priceCalculationMethod: service.weight ? 'WEIGHT' : 'BAG_COUNT',
           priceCalculatedAt: new Date().toISOString()
-        });
+        };
+        
+        serviceStorage.updateService(service.id, updatedService);
 
         results.pricesCalculated++;
         results.details.push({
@@ -155,8 +179,10 @@ export const migrateExistingServices = () => {
 
       // Paso 2: Crear transacción si no existe
       const finalPrice = service.price || calculateMissingPrice(service, hotel);
-      if (finalPrice > 0 && !serviceHasTransaction(service.id)) {
-        const transaction = createServiceTransaction(service, hotel, finalPrice, 'MIGRATION');
+      const hasTransaction = await serviceHasTransaction(service.id);
+      
+      if (finalPrice > 0 && !hasTransaction) {
+        const transaction = await createServiceTransaction(service, hotel, finalPrice, 'MIGRATION');
         
         results.transactionsCreated++;
         results.details.push({
@@ -175,7 +201,7 @@ export const migrateExistingServices = () => {
         error: error.message
       });
     }
-  });
+  }
 
   // Guardar resumen de migración
   const migrationSummary = {
@@ -195,7 +221,7 @@ export const migrateExistingServices = () => {
  * Previsualiza lo que haría la migración sin ejecutarla
  * @returns {Object} Resumen de lo que se migraría
  */
-export const previewMigration = () => {
+export const previewMigration = async () => {
   const services = serviceStorage.getServices();
   const hotels = hotelStorage.getHotels();
   
@@ -207,11 +233,11 @@ export const previewMigration = () => {
 
   const validStatuses = ['PICKED_UP', 'LABELED', 'IN_PROCESS', 'PARTIAL_DELIVERY', 'COMPLETED'];
   
-  services.forEach(service => {
+  for (const service of services) {
     const statusToCheck = service.status.toUpperCase();
     if (!validStatuses.includes(statusToCheck) && 
         !validStatuses.some(status => status.toLowerCase() === service.status.toLowerCase())) {
-      return;
+      continue;
     }
 
     let hotel = null;
@@ -238,7 +264,8 @@ export const previewMigration = () => {
       preview.totalPotentialIncome += estimatedPrice;
     } else {
       // Verificar servicios con precio pero sin transacción
-      if (!serviceHasTransaction(service.id)) {
+      const hasTransaction = await serviceHasTransaction(service.id);
+      if (!hasTransaction) {
         preview.servicesWithoutTransaction.push({
           id: service.id,
           guest: service.guestName,
@@ -250,7 +277,7 @@ export const previewMigration = () => {
         preview.totalPotentialIncome += service.price;
       }
     }
-  });
+  }
 
   return preview;
 };
@@ -259,16 +286,17 @@ export const previewMigration = () => {
 export const createPickupTransaction = async (service, hotel, price) => {
   try {
     // Verificar que no exista ya una transacción
-    if (serviceHasTransaction(service.id)) {
+    const hasTransaction = await serviceHasTransaction(service.id);
+    if (hasTransaction) {
       console.log('Ya existe transacción para este servicio');
       return null;
     }
 
-    const transaction = createServiceTransaction(service, hotel, price, 'PICKUP');
-    console.log('Transacción creada exitosamente:', transaction.id);
+    const transaction = await createServiceTransaction(service, hotel, price, 'PICKUP');
+    console.log('Transacción de pickup creada exitosamente:', transaction.id);
     return transaction;
   } catch (error) {
-    console.error('Error al crear transacción:', error);
+    console.error('Error al crear transacción de pickup:', error);
     throw error;
   }
 };
