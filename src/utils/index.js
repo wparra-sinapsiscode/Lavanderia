@@ -325,13 +325,37 @@ export const getServiceTypeIcon = (service) => {
 };
 
 export const validateEmail = (email) => {
+  if (!email) return 'El email es requerido';
+  
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return re.test(email);
+  
+  if (!re.test(email)) {
+    return 'Por favor ingrese un email válido';
+  }
+  
+  return true;
 };
 
 export const validatePhone = (phone) => {
-  const re = /^[0-9]{9}$/;
-  return re.test(phone.replace(/\s/g, ''));
+  if (!phone) return 'El teléfono es requerido';
+  
+  const cleanPhone = phone.replace(/\s/g, '');
+  
+  // Verificar que solo contenga números
+  if (!/^[0-9]*$/.test(cleanPhone)) {
+    return 'El teléfono solo debe contener números';
+  }
+  
+  // Verificar longitud exacta de 9 dígitos
+  if (cleanPhone.length !== 9) {
+    if (cleanPhone.length < 9) {
+      return `El teléfono debe tener 9 dígitos (faltan ${9 - cleanPhone.length})`;
+    } else {
+      return `El teléfono debe tener 9 dígitos (sobran ${cleanPhone.length - 9})`;
+    }
+  }
+  
+  return true;
 };
 
 export const convertToBase64 = (file) => {

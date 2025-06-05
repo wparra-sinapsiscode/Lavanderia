@@ -76,20 +76,16 @@ const Settings = () => {
     updateDataStats();
   }, []);
 
-  // Función para actualizar estadísticas de datos
+  // Función para actualizar estadísticas de datos desde API
   const updateDataStats = useCallback(() => {
+    // Data stats should come from API - using placeholder for now
     setDataStats({
-      hotels: (storage.get(APP_CONFIG.STORAGE_KEYS.HOTELS) || []).length,
-      services: (storage.get(APP_CONFIG.STORAGE_KEYS.SERVICES) || []).length,
-      bagLabels: (storage.get(APP_CONFIG.STORAGE_KEYS.BAG_LABELS) || []).length,
-      transactions: (storage.get(APP_CONFIG.STORAGE_KEYS.TRANSACTIONS) || []).length,
-      users: (storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || []).length
+      hotels: 0,
+      services: 0,
+      bagLabels: 0,
+      transactions: 0,
+      users: 0
     });
-  }, []);
-
-  // Función para actualizar estado de datos demo
-  const updateDemoState = useCallback(() => {
-    setDemoDataEnabled(localStorage.getItem('fumy_limp_disable_demo') !== 'true');
   }, []);
   
   const loadSettings = () => {
@@ -167,27 +163,12 @@ const Settings = () => {
 
   const generateMixedServices = () => {
     try {
-      // Clear existing data and regenerate with modern data
-      localStorage.clear();
-      // Asegurar que los datos demo están habilitados
-      localStorage.removeItem('fumy_limp_disable_demo');
-      const result = initializeModernData();
-      
-      if (result.services === 0) {
-        error('Error', 'No se pudieron generar servicios modernos.');
-        return;
-      }
-      
-      updateDataStats();
-      updateDemoState();
-      
-      success(
-        'Datos Modernos Generados', 
-        `Sistema regenerado: ${result.services} servicios, ${result.transactions} transacciones, ${result.bagLabels} rótulos`
-      );
+      // This function is disabled - data comes from database only
+      error('Error', 'Esta función está deshabilitada. Los datos provienen de la base de datos.');
+      return;
     } catch (err) {
       console.error('Error generating mixed services:', err);
-      error('Error', 'No se pudieron generar los servicios de prueba.');
+      error('Error', 'Esta función está deshabilitada.');
     }
   };
 

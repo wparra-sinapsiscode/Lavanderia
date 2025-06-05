@@ -701,9 +701,12 @@ const Pickup = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Zona
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Acciones
-                    </th>
+                    {/* Solo mostrar columna de acciones si hay servicios que permiten acciones */}
+                    {(isAdmin || pendingServices.some(s => s.status === 'ASSIGNED_TO_ROUTE' || (s.status === 'PENDING_PICKUP' && s.weight && s.photos && s.signature))) && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Acciones
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -772,79 +775,87 @@ const Pickup = () => {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center space-x-2">
-                          {/* Botones de acción originales */}
-                          {service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE' ? (
-                            // Servicios en estado PENDING_PICKUP
-                            service.weight && service.photos && service.signature ? (
-                              // Tiene datos pero no confirmado
-                              isRepartidor ? (
-                                <Button
-                                  size="sm"
-                                  className="bg-yellow-600 hover:bg-yellow-700"
-                                  onClick={() => handleConfirmPickup(service)}
-                                >
-                                  <UserCheck className="h-4 w-4 mr-1" />
-                                  Confirmar Recogida
-                                </Button>
+                      {/* Solo mostrar celda de acciones si la columna está visible */}
+                      {(isAdmin || pendingServices.some(s => s.status === 'ASSIGNED_TO_ROUTE' || (s.status === 'PENDING_PICKUP' && s.weight && s.photos && s.signature))) && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex items-center space-x-2">
+                            {/* Botones de acción originales */}
+                            {service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE' ? (
+                              // Servicios en estado PENDING_PICKUP
+                              service.weight && service.photos && service.signature ? (
+                                // Tiene datos pero no confirmado
+                                isRepartidor ? (
+                                  <Button
+                                    size="sm"
+                                    className="bg-yellow-600 hover:bg-yellow-700"
+                                    onClick={() => handleConfirmPickup(service)}
+                                  >
+                                    <UserCheck className="h-4 w-4 mr-1" />
+                                    Confirmar Recogida
+                                  </Button>
+                                ) : (
+                                  <div className="flex items-center text-yellow-600">
+                                    <Clock className="h-4 w-4 mr-1" />
+                                    <span>Listo para confirmar</span>
+                                  </div>
+                                )
                               ) : (
-                                <div className="flex items-center text-yellow-600">
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  <span>Listo para confirmar</span>
-                                </div>
+                                // Sin datos de recogida
+                                isRepartidor ? (
+                                  service.status === 'PENDING_PICKUP' ? (
+                                    // Servicio pendiente - no mostrar nada ya que no hay columna de acciones
+                                    <span className="text-gray-400 text-xs">-</span>
+                                  ) : (
+                                    // Servicio con ruta iniciada (ASSIGNED_TO_ROUTE) - puede recoger
+                                    <Button
+                                      size="sm"
+                                      onClick={() => setSelectedService(service)}
+                                    >
+                                      <Truck className="h-4 w-4 mr-1" />
+                                      Recoger
+                                    </Button>
+                                  )
+                                ) : (
+                                  <div className={`flex items-center ${SERVICE_STATUS_CONFIG[service.status]?.textColor || 'text-red-600'}`}>
+                                    <Clock className="h-4 w-4 mr-1" />
+                                    <span>{SERVICE_STATUS_CONFIG[service.status]?.action || 'Pendiente'}</span>
+                                  </div>
+                                )
                               )
+                            ) : service.status === 'PICKED_UP' ? (
+                              <div className="flex items-center text-green-600">
+                                <Package className="h-4 w-4 mr-1" />
+                                <span>Recogido</span>
+                              </div>
+                            ) : service.status === 'LABELED' ? (
+                              <div className="flex items-center text-indigo-600">
+                                <Tag className="h-4 w-4 mr-1" />
+                                <span>Rotulado</span>
+                              </div>
+                            ) : service.status === 'IN_PROCESS' ? (
+                              <div className="flex items-center text-purple-600">
+                                <Star className="h-4 w-4 mr-1" />
+                                <span>En proceso</span>
+                              </div>
+                            ) : service.status === 'PARTIAL_DELIVERY' ? (
+                              <div className="flex items-center text-orange-600">
+                                <Package className="h-4 w-4 mr-1" />
+                                <span>Entrega parcial</span>
+                              </div>
+                            ) : service.status === 'COMPLETED' ? (
+                              <div className="flex items-center text-green-600">
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                <span>Completado</span>
+                              </div>
                             ) : (
-                              // Sin datos de recogida
-                              isRepartidor ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => setSelectedService(service)}
-                                >
-                                  <Truck className="h-4 w-4 mr-1" />
-                                  Recoger
-                                </Button>
-                              ) : (
-                                <div className={`flex items-center ${SERVICE_STATUS_CONFIG[service.status]?.textColor || 'text-red-600'}`}>
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  <span>{SERVICE_STATUS_CONFIG[service.status]?.action || 'Pendiente'}</span>
-                                </div>
-                              )
-                            )
-                          ) : service.status === 'PICKED_UP' ? (
-                            <div className="flex items-center text-green-600">
-                              <Package className="h-4 w-4 mr-1" />
-                              <span>Recogido</span>
-                            </div>
-                          ) : service.status === 'LABELED' ? (
-                            <div className="flex items-center text-indigo-600">
-                              <Tag className="h-4 w-4 mr-1" />
-                              <span>Rotulado</span>
-                            </div>
-                          ) : service.status === 'IN_PROCESS' ? (
-                            <div className="flex items-center text-purple-600">
-                              <Star className="h-4 w-4 mr-1" />
-                              <span>En proceso</span>
-                            </div>
-                          ) : service.status === 'PARTIAL_DELIVERY' ? (
-                            <div className="flex items-center text-orange-600">
-                              <Package className="h-4 w-4 mr-1" />
-                              <span>Entrega parcial</span>
-                            </div>
-                          ) : service.status === 'COMPLETED' ? (
-                            <div className="flex items-center text-green-600">
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              <span>Completado</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center text-gray-600">
-                              <Clock className="h-4 w-4 mr-1" />
-                              <span>Estado desconocido</span>
-                            </div>
-                          )}
-
-                        </div>
-                      </td>
+                              <div className="flex items-center text-gray-600">
+                                <Clock className="h-4 w-4 mr-1" />
+                                <span>Estado desconocido</span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

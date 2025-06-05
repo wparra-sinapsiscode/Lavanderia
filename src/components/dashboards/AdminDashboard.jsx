@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../store/AuthContext';
-import { serviceStorage, hotelStorage, storage, financeStorage } from '../../utils/storage';
 import { formatCurrency, formatDate } from '../../utils';
-import { APP_CONFIG } from '../../constants';
 import dashboardService from '../../services/dashboard.service';
 import { useNotifications } from '../../store/NotificationContext';
 import Card from '../ui/Card';
@@ -54,26 +52,21 @@ const AdminDashboard = () => {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Try to fetch data from backend API
       const adminMetrics = await dashboardService.getDashboardSummary(timePeriod);
       const serviceStats = await dashboardService.getServiceStats(timePeriod);
       const financialStats = await dashboardService.getFinancialStats(timePeriod);
       const hotelStats = await dashboardService.getHotelStats(timePeriod);
       
-      // Verificar datos y proporcionar valores predeterminados si están incompletos
       const hasFinancialStats = financialStats && typeof financialStats === 'object';
       const hasAdminMetrics = adminMetrics && typeof adminMetrics === 'object';
       
-      // Si no hay datos financieros o de métricas en absoluto, podemos mostrar una notificación
       if (!hasFinancialStats && !hasAdminMetrics) {
-        console.warn('Datos incompletos del API - usando valores predeterminados');
         showNotification({
           type: 'warning',
-          message: 'Algunos datos del dashboard no están disponibles. Mostrando información parcial.'
+          message: 'Algunos datos del dashboard no están disponibles.'
         });
       }
       
-      // Crear estructuras predeterminadas para los datos faltantes
       const financialSummary = hasFinancialStats && financialStats.summary ? financialStats.summary : {
         revenue: 0,
         expenses: 0,
@@ -90,7 +83,6 @@ const AdminDashboard = () => {
         CANCELLED: 0
       };
       
-      // Update stats from backend data con mayor tolerancia a fallos
       setStats({
         totalRevenue: financialSummary.revenue || 0,
         totalExpenses: financialSummary.expenses || 0,
@@ -108,68 +100,19 @@ const AdminDashboard = () => {
         pendingServices: hasAdminMetrics ? adminMetrics.pendingPickup || 0 : 0
       });
       
-      // Prepare chart data from API response
       prepareApiChartData(adminMetrics, serviceStats, financialStats, hotelStats);
       loadApiRecentActivities();
     } catch (error) {
       console.error('Error loading dashboard data from API:', error);
       showNotification({
         type: 'error',
-        message: 'Error al cargar datos del dashboard. Usando datos locales.'
+        message: 'Error al cargar datos del dashboard.'
       });
-      
-      // Fallback to local storage if API fails
-      loadLocalDashboardData();
     } finally {
       setLoading(false);
     }
   };
   
-  const loadLocalDashboardData = () => {
-    const services = serviceStorage.getServices();
-    const hotels = hotelStorage.getHotels();
-    const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    const transactions = financeStorage.getTransactions();
-
-    // Calculate financial stats from finance module
-    const incomeTransactions = transactions.filter(t => t.type === 'income');
-    const expenseTransactions = transactions.filter(t => t.type === 'expense');
-    const totalRevenue = incomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-    const totalExpenses = expenseTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-    const netIncome = totalRevenue - totalExpenses;
-    
-    const totalServices = services.length;
-    const totalHotels = hotels.length;
-    const totalRepartidores = users.filter(u => u.role === 'repartidor').length;
-    const averageServiceValue = incomeTransactions.length > 0 ? totalRevenue / incomeTransactions.length : 0;
-    const completedServices = services.filter(s => s.status === 'completado').length;
-    const completionRate = totalServices > 0 ? (completedServices / totalServices) * 100 : 0;
-
-    const today = new Date().toDateString();
-    const todayServices = services.filter(s => 
-      new Date(s.timestamp).toDateString() === today
-    ).length;
-    const pendingServices = services.filter(s => 
-      s.status === 'pendiente_recojo' || s.status === 'recogido' || s.status === 'en_proceso'
-    ).length;
-
-    setStats({
-      totalRevenue,
-      totalExpenses,
-      netIncome,
-      totalServices,
-      totalHotels,
-      totalRepartidores,
-      averageServiceValue,
-      completionRate,
-      todayServices,
-      pendingServices
-    });
-
-    // Prepare chart data
-    prepareLocalChartData(services, hotels, transactions);
-    loadLocalRecentActivities();
-  };
 
   const prepareApiChartData = (adminMetrics, serviceStats, financialStats, hotelStats) => {
     try {
@@ -294,84 +237,15 @@ const AdminDashboard = () => {
           }
         }
         
-        // Si no encontramos logs en ninguna parte, usar datos locales
-        loadLocalRecentActivities();
+        // Si no encontramos logs, mostrar array vacío
+        setRecentActivities([]);
       }
     } catch (error) {
       console.error('Error loading audit logs:', error);
-      // Fallback a almacenamiento local en caso de error
-      loadLocalRecentActivities();
+      setRecentActivities([]);
     }
   };
   
-  const prepareLocalChartData = (services, hotels, transactions) => {
-    // Revenue chart data (last 7 days) from finance module
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - i));
-      return date;
-    });
-
-    const revenueChart = last7Days.map(date => {
-      const dayIncomeTransactions = transactions.filter(t => 
-        t.type === 'income' && 
-        new Date(t.timestamp).toDateString() === date.toDateString()
-      );
-      const dayExpenseTransactions = transactions.filter(t => 
-        t.type === 'expense' && 
-        new Date(t.timestamp).toDateString() === date.toDateString()
-      );
-      const dayServices = services.filter(s => 
-        new Date(s.timestamp).toDateString() === date.toDateString()
-      );
-      
-      return {
-        date: date.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' }),
-        revenue: dayIncomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
-        expenses: dayExpenseTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
-        services: dayServices.length
-      };
-    });
-
-    // Services by status
-    const statusChart = [
-      { name: 'Pendientes', value: services.filter(s => s.status === 'pendiente_recojo').length, color: '#f59e0b' },
-      { name: 'Recogidos', value: services.filter(s => s.status === 'recogido').length, color: '#3b82f6' },
-      { name: 'Rotulados', value: services.filter(s => s.status === 'rotulado').length, color: '#6366f1' },
-      { name: 'En Proceso', value: services.filter(s => s.status === 'en_proceso').length, color: '#8b5cf6' },
-      { name: 'Entrega Parcial', value: services.filter(s => s.status === 'entrega_parcial').length, color: '#f97316' },
-      { name: 'Completados', value: services.filter(s => s.status === 'completado').length, color: '#10b981' }
-    ].filter(item => item.value > 0);
-
-    // Services by hotel (using estimated revenue based on services)
-    const hotelChart = hotels.map(hotel => {
-      const hotelServices = services.filter(s => s.hotelId === hotel.id);
-      // Estimate revenue: average transaction amount * number of services for this hotel
-      const avgTransactionAmount = transactions.filter(t => t.type === 'income').length > 0 
-        ? transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0) / transactions.filter(t => t.type === 'income').length
-        : 0;
-      return {
-        name: hotel.name.replace('Hotel ', ''),
-        services: hotelServices.length,
-        revenue: hotelServices.length * avgTransactionAmount
-      };
-    }).sort((a, b) => b.services - a.services).slice(0, 5);
-
-    setChartData({
-      revenueChart,
-      servicesChart: revenueChart,
-      statusChart,
-      hotelChart
-    });
-  };
-
-  const loadLocalRecentActivities = () => {
-    const auditLog = storage.get(APP_CONFIG.STORAGE_KEYS.AUDIT_LOG) || [];
-    const recent = auditLog
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      .slice(0, 10);
-    setRecentActivities(recent);
-  };
 
   const StatCard = ({ title, value, icon: Icon, color = 'blue', subtitle, trend }) => (
     <Card>

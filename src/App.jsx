@@ -42,9 +42,9 @@ const AppContent = () => {
 
   const [dataInitialized, setDataInitialized] = useState(false);
   
-  // Permanently disable demo data
+  // Demo data disabled - using database only
   useEffect(() => {
-    localStorage.setItem('fumy_limp_disable_demo', 'true');
+    // No need to store demo preference locally
   }, []);
   
   // Simulated data event handling removed

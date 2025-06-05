@@ -588,8 +588,17 @@ const Routes = () => {
             {/* Route Stats */}
             <div className="grid grid-cols-4 gap-3">
               <div className="text-center">
-                <p className="text-xl font-bold text-blue-600">{route.hotels.reduce((sum, h) => sum + (h.services?.filter(s => isPendingPickup(s)).length || 0), 0)}</p>
-                <p className="text-xs text-gray-600">Recojos</p>
+                <p className="text-xl font-bold text-blue-600">
+                  {route.hotels.reduce((sum, h) => sum + (h.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE').length || 0), 0)}
+                  {route.status !== 'en_progreso' && (
+                    <span className="text-orange-600">
+                      +{route.hotels.reduce((sum, h) => sum + (h.services?.filter(s => s.status === 'PENDING_PICKUP').length || 0), 0)}
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-600">
+                  {route.status === 'en_progreso' ? 'Listos' : 'Recojos'}
+                </p>
               </div>
               <div className="text-center">
                 <p className="text-xl font-bold text-green-600">{route.totalDeliveries || 0}</p>
@@ -652,9 +661,14 @@ const Routes = () => {
                         {hotel.estimatedTimeMinutes ? ` ${hotel.estimatedTimeMinutes} min` : hotel.estimatedTime}
                       </p>
                       <div className="flex gap-1 mt-1">
-                        {hotel.services?.filter(s => isPendingPickup(s)).length > 0 && (
+                        {hotel.services?.filter(s => s.status === 'PENDING_PICKUP').length > 0 && (
+                          <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-800 rounded border-orange-200">
+                            {hotel.services.filter(s => s.status === 'PENDING_PICKUP').length} Pendientes
+                          </span>
+                        )}
+                        {hotel.services?.filter(s => s.status === 'ASSIGNED_TO_ROUTE').length > 0 && (
                           <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded border-blue-200">
-                            {hotel.services.filter(s => isPendingPickup(s)).length} Recojos
+                            {hotel.services.filter(s => s.status === 'ASSIGNED_TO_ROUTE').length} Listos
                           </span>
                         )}
                         {hotel.deliveries?.length > 0 && (
@@ -671,10 +685,10 @@ const Routes = () => {
                       {hotel.services?.map((service, serviceIndex) => {
                         console.log(`Checking service ${service.guestName}:`, {
                           status: service.status,
-                          shouldShow: service.status === 'PENDING_PICKUP' || service.status === 'ASSIGNED_TO_ROUTE'
+                          shouldShow: service.status === 'ASSIGNED_TO_ROUTE' // Solo mostrar si ruta está iniciada
                         });
                         return (
-                        isPendingPickup(service) && (
+                        service.status === 'ASSIGNED_TO_ROUTE' && (
                           <div key={`service-${service.id}`} className="flex items-center gap-3 p-2 bg-blue-50 rounded border border-blue-200">
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-900">

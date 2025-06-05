@@ -178,10 +178,8 @@ export const migrateExistingServices = () => {
     executedBy: 'System Migration'
   };
 
-  // Guardar en localStorage para auditoría
-  const migrations = JSON.parse(localStorage.getItem('financial_migrations') || '[]');
-  migrations.push(migrationSummary);
-  localStorage.setItem('financial_migrations', JSON.stringify(migrations));
+  // Migration audit should be stored via API
+  console.log('Migration completed:', migrationSummary);
 
   return results;
 };
