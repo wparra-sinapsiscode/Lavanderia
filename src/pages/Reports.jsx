@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../store/AuthContext';
 import { useNotifications } from '../store/NotificationContext';
-import { serviceStorage, hotelStorage, storage } from '../utils/storage';
+import dashboardService from '../services/dashboard.service';
+import serviceService from '../services/service.service';
+import hotelService from '../services/hotel.service';
 import { formatDate } from '../utils';
 import { SERVICE_STATUS } from '../types';
 import { APP_CONFIG } from '../constants';
@@ -34,6 +36,8 @@ const Reports = () => {
   const [hotels, setHotels] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [selectedTab, setSelectedTab] = useState('operations');
+  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState(null);
   const [dateRange, setDateRange] = useState(() => {
     // Usar fechas locales en lugar de UTC para evitar desfase de zona horaria
     const today = new Date();
@@ -56,38 +60,49 @@ const Reports = () => {
     loadReportData();
   }, [dateRange]);
 
-  const loadReportData = () => {
-    const allServices = serviceStorage.getServices();
-    const allHotels = hotelStorage.getHotels();
-    const allRoutes = storage.get('PICKUP_ROUTES') || [];
-    
-    // Filter by date range
-    const filteredServices = allServices.filter(service => {
-      const serviceDate = new Date(service.pickupDate || service.timestamp);
-      const startDate = new Date(dateRange.startDate);
-      const endDate = new Date(dateRange.endDate);
-      return serviceDate >= startDate && serviceDate <= endDate;
-    });
-    
-    const filteredRoutes = allRoutes.filter(route => {
-      const routeDate = new Date(route.date);
-      const startDate = new Date(dateRange.startDate);
-      const endDate = new Date(dateRange.endDate);
-      return routeDate >= startDate && routeDate <= endDate;
-    });
-    
-    setServices(filteredServices);
-    setHotels(allHotels);
-    setRoutes(filteredRoutes);
+  const loadReportData = async () => {
+    try {
+      setLoading(true);
+      
+      // Cargar datos del dashboard (ya funciona correctamente)
+      const dashboardResponse = await dashboardService.getDashboardSummary('month');
+      setDashboardData(dashboardResponse);
+      
+      // Cargar servicios usando la función correcta
+      const servicesResponse = await serviceService.getAllServices();
+      const allServices = servicesResponse.success ? servicesResponse.data : [];
+      
+      // Cargar hoteles usando la función correcta
+      const hotelsResponse = await hotelService.getAllHotels();
+      const allHotels = hotelsResponse.success ? hotelsResponse.data : [];
+      
+      // Filtrar servicios por rango de fechas
+      const filteredServices = allServices.filter(service => {
+        if (!service.createdAt) return false;
+        const serviceDate = new Date(service.createdAt);
+        const startDate = new Date(dateRange.startDate);
+        const endDate = new Date(dateRange.endDate + 'T23:59:59.999Z');
+        return serviceDate >= startDate && serviceDate <= endDate;
+      });
+      
+      setServices(filteredServices);
+      setHotels(allHotels);
+      setRoutes([]); // Por ahora no hay endpoint específico para rutas
+      
+    } catch (error) {
+      console.error('Error loading report data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Calculate operational metrics
+  // Calculate operational metrics using dashboard data when available
   const metrics = {
-    // Service Operations
-    totalOrders: services.length,
-    pendingPickups: services.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length,
-    inProgress: services.filter(s => s.status === SERVICE_STATUS.PICKED_UP || s.status === SERVICE_STATUS.IN_PROCESS).length,
-    completed: services.filter(s => s.status === SERVICE_STATUS.COMPLETED).length,
+    // Service Operations - usar datos del dashboard si están disponibles
+    totalOrders: dashboardData?.data?.totalServices || services.length,
+    pendingPickups: dashboardData?.data?.pendingPickup || services.filter(s => s.status === SERVICE_STATUS.PENDING_PICKUP).length,
+    inProgress: dashboardData?.data?.servicesByStatus?.IN_PROCESS || services.filter(s => s.status === SERVICE_STATUS.PICKED_UP || s.status === SERVICE_STATUS.IN_PROCESS).length,
+    completed: dashboardData?.data?.servicesByStatus?.COMPLETED || services.filter(s => s.status === SERVICE_STATUS.COMPLETED).length,
     
     // Weight and Volume
     totalWeight: services.reduce((sum, s) => sum + (s.weight || 0), 0),
@@ -105,9 +120,9 @@ const Reports = () => {
     averageProcessTime: calculateAverageProcessTime(services),
     onTimeDeliveryRate: calculateOnTimeRate(services),
     
-    // Hotel Operations
-    activeHotels: getActiveHotels(services, hotels),
-    hotelPickupStats: getHotelPickupStats(services, hotels),
+    // Hotel Operations - usar datos del dashboard si están disponibles
+    activeHotels: dashboardData?.data?.topHotels?.length || getActiveHotels(services, hotels),
+    hotelPickupStats: dashboardData?.data?.topHotels || getHotelPickupStats(services, hotels),
     
     // Repartidor Performance
     repartidorStats: getRepartidorStats(services, routes),
@@ -115,8 +130,8 @@ const Reports = () => {
     // Daily Operations
     dailyOperations: getDailyOperations(services, routes),
     
-    // Status Distribution
-    servicesByStatus: getServicesByStatus(services),
+    // Status Distribution - usar datos del dashboard si están disponibles
+    servicesByStatus: dashboardData?.data?.servicesByStatus || getServicesByStatus(services),
     routesByStatus: getRoutesByStatus(routes)
   };
 
@@ -340,18 +355,19 @@ const Reports = () => {
     const reportData = {
       period: `${dateRange.startDate} al ${dateRange.endDate}`,
       operationalMetrics: metrics,
+      dashboardData: dashboardData,
       services: services.map(s => ({
         id: s.id,
-        hotel: s.hotel,
+        hotel: s.hotel?.name || 'N/A',
         contacto: s.guestName,
         estado: s.status,
         peso: s.weight,
         bolsas: s.bagCount,
-        fechaOrden: s.timestamp,
+        fechaOrden: s.createdAt,
         fechaRecojo: s.pickupDate,
         fechaProceso: s.processStartDate,
         fechaEntrega: s.deliveryDate,
-        repartidor: s.repartidor,
+        repartidor: s.repartidor?.name || s.repartidorName,
         prioridad: s.priority
       })),
       routes: routes.map(r => ({
@@ -476,8 +492,16 @@ const Reports = () => {
         </nav>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span className="ml-2 text-gray-600">Cargando datos...</span>
+        </div>
+      )}
+
       {/* Operations Tab */}
-      {selectedTab === 'operations' && (
+      {selectedTab === 'operations' && !loading && (
         <div className="space-y-6">
           {/* Key Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -539,7 +563,6 @@ const Reports = () => {
               <Card.Content>
                 <div className="space-y-3">
                   {Object.entries(metrics.servicesByStatus)
-                    .filter(([status, count]) => count > 0) // Only show statuses with actual counts
                     .map(([status, count]) => (
                     <div key={status} className="flex justify-between items-center">
                       <span className="text-sm text-gray-600 capitalize">
@@ -597,7 +620,7 @@ const Reports = () => {
       )}
 
       {/* Logistics Tab */}
-      {selectedTab === 'logistics' && (
+      {selectedTab === 'logistics' && !loading && (
         <div className="space-y-6">
           {/* Route Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -692,7 +715,7 @@ const Reports = () => {
       )}
 
       {/* Performance Tab */}
-      {selectedTab === 'performance' && (
+      {selectedTab === 'performance' && !loading && (
         <div className="space-y-6">
           {/* Performance Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
