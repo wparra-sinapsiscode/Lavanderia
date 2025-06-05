@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
-import { bagLabelStorage, serviceStorage } from '../../utils/storage';
+// ✅ Storage eliminado - Solo usar API
 import serviceService from '../../services/service.service';
 import bagLabelService from '../../services/bagLabel.service';
 import { SERVICE_STATUS } from '../../types';
@@ -302,7 +302,7 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
                 generatedAt: 'LAVANDERIA'
               };
               
-              bagLabelStorage.addBagLabel(localLabelData);
+              // ✅ Solo usar API - localStorage eliminado
             });
           }
         } else {
@@ -342,37 +342,11 @@ const RotuladoForm = ({ service, onClose, onStatusUpdated, viewMode = false, exi
             generatedAt: 'LAVANDERIA'
           };
           
-          bagLabelStorage.addBagLabel(labelData);
+          // ✅ Solo usar API - localStorage eliminado
         });
 
-        // Actualizar estado del servicio localmente
-        const services = serviceStorage.getServices();
-        const photoFiles = photos.filter(p => p.preview).map(photo => photo.preview);
-        const finalLocalStatus = SERVICE_STATUS.LABELED; // Solo LABELED, no automático
-        const statusMessage = photoFiles.length > 0 
-          ? `Rotulado completado con ${photoFiles.length} fotos por ${user.name}`
-          : `Rotulado completado por ${user.name}`;
-        
-        const updatedServices = services.map(s => {
-          if (s.id === service.id) {
-            const updatedService = {
-              ...s,
-              status: finalLocalStatus,
-              labeledDate: new Date().toISOString(),
-              labelingPhotos: photoFiles, // Solo previews válidos
-              internalNotes: (s.internalNotes || '') + 
-                `\n[${new Date().toLocaleString()}] ${statusMessage}\nRótulos: ${labelCodes.map(l => l.code).join(', ')}`,
-              syncPending: true
-            };
-            
-            // Nota: No se agrega processStartDate aquí - se hará cuando manualmente se cambie a EN_PROCESS
-            
-            return updatedService;
-          }
-          return s;
-        });
-        
-        serviceStorage.setServices(updatedServices);
+        // ❌ Fallback falló completamente - Solo reportar error
+        error('Error', 'No se pudo completar el rotulado. Intente nuevamente.');
       }
 
       // Determinar mensaje basado en si hay fotos

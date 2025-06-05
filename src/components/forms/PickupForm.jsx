@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/AuthContext';
 import { useNotifications } from '../../store/NotificationContext';
-import { serviceStorage, hotelStorage, auditStorage } from '../../utils/storage';
+// ✅ Storage eliminado - Solo usar API
 import { calculateServicePrice, convertToBase64 } from '../../utils';
 import { createPickupTransaction } from '../../utils/financialMigration';
 import serviceService from '../../services/service.service';
@@ -447,20 +447,9 @@ const PickupForm = ({ serviceId, onClose, onPickupCompleted }) => {
             )
         };
 
-        // Update in local storage
-        updateSuccess = serviceStorage.updateService(serviceId, updatedService);
-        
-        // Add local audit log
-        if (updateSuccess) {
-          auditStorage.addAuditEntry({
-            action: 'PICKUP_DATA_REGISTERED',
-            user: user.name,
-            timestamp: new Date().toISOString(),
-            details: `Datos de recogida registrados para ${service.guestName} - ${typeof hotel === 'object' ? hotel.name : hotel}. Peso: ${weight}kg, Precio: S/${price.toFixed(2)}. Pendiente de confirmación.`,
-            syncPending: true
-          });
-          console.log('Recojo guardado exitosamente en almacenamiento local');
-        }
+        // ❌ API falló - Sin fallback local
+        console.error('No se pudo completar el recojo sin API');
+        error('Error', 'No se pudo completar el recojo. Verifique la conexión.');
       }
 
       if (updateSuccess) {

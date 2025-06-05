@@ -45,14 +45,14 @@ const MyServices = () => {
     direction: 'desc'
   });
   
-  // Status options for filtering
+  // 🆕 Status options para servicios PICKUP únicamente
   const statusOptions = [
     { value: '', label: 'Todos los estados' },
     { value: 'PENDING_PICKUP', label: 'Pendiente de recogida' },
+    { value: 'ASSIGNED_TO_ROUTE', label: 'Ruta asignada' },
     { value: 'PICKED_UP', label: 'Recogido' },
     { value: 'LABELED', label: 'Rotulado' },
     { value: 'IN_PROCESS', label: 'En proceso' },
-    { value: 'READY_FOR_DELIVERY', label: 'Listo para entrega' },
     { value: 'PARTIAL_DELIVERY', label: 'Entrega parcial' },
     { value: 'COMPLETED', label: 'Completado' },
     { value: 'CANCELLED', label: 'Cancelado' }
@@ -76,11 +76,13 @@ const MyServices = () => {
   const loadServices = async () => {
     setLoading(true);
     try {
-      const response = await serviceService.getMyServices();
+      // 🆕 Solo cargar servicios PICKUP (servicios originales)
+      const response = await serviceService.getServicesByType('PICKUP');
       
       if (response.success && response.data) {
         setServices(response.data);
         setFilteredServices(response.data);
+        console.log('📦 Servicios PICKUP cargados:', response.data.length);
       } else {
         throw new Error(response.message || 'Error al cargar servicios');
       }

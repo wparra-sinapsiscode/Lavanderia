@@ -70,19 +70,20 @@ const Delivery = () => {
   const loadDeliveryData = async () => {
     setLoading(true);
     try {
-      // Cargar datos desde la base de datos
-      const [servicesResponse, usersResponse, hotelsResponse] = await Promise.all([
-        serviceService.getAllServices(),
-        userService.getRepartidores({ active: true }),
-        hotelService.getAllHotels()
+      // 🆕 Usar nuevo endpoint para servicios de entrega
+      const [deliveryResponse, usersResponse] = await Promise.all([
+        serviceService.getReadyForDelivery(user?.zone),
+        userService.getRepartidores({ active: true })
       ]);
       
-      // Procesar servicios
-      let services = [];
-      if (servicesResponse.success) {
-        services = servicesResponse.data;
+      // Procesar servicios de entrega
+      let readyDeliveries = [];
+      if (deliveryResponse.success) {
+        readyDeliveries = deliveryResponse.data;
+        console.log('🚛 Servicios de entrega cargados:', readyDeliveries.length);
       } else {
-        console.warn('Error cargando servicios:', servicesResponse.message);
+        console.warn('Error cargando servicios de entrega:', deliveryResponse.message);
+        error('Error', 'No se pudieron cargar los servicios de entrega');
       }
       
       // Procesar repartidores
@@ -93,41 +94,23 @@ const Delivery = () => {
         setRepartidores([]);
       }
       
-      // Filter services ready for delivery 
-      // Incluye SOLO servicios de entrega específicos (no servicios originales)
-      let ready = services.filter(s => 
-        // Servicios de entrega específicos (estos manejan la logística final)
-        s.status === 'READY_FOR_DELIVERY' ||
-        s.status === 'ASSIGNED_TO_ROUTE' ||
-        s.status === 'OUT_FOR_DELIVERY' || // Mantenemos por compatibilidad
-        s.isDeliveryService === true // Flag adicional para identificar servicios de entrega
-        // ❌ REMOVIDO: s.status === SERVICE_STATUS.PARTIAL_DELIVERY 
-        //    Los servicios PARTIAL_DELIVERY ya tienen sus servicios de entrega separados
-        // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED 
-        //    Los servicios COMPLETED ya tienen su servicio de entrega separado
-      );
+      // Filter for different statuses
+      const ready = readyDeliveries.filter(s => s.status === 'READY_FOR_DELIVERY');
+      const assigned = readyDeliveries.filter(s => s.status === 'ASSIGNED_TO_ROUTE');
+      const outForDelivery = readyDeliveries.filter(s => s.status === 'OUT_FOR_DELIVERY');
 
-      // For repartidores, show only their assigned deliveries
-      if (isRepartidor) {
-        ready = ready.filter(s => 
-          !s.deliveryRepartidorId || s.deliveryRepartidorId === user.id
-        );
-      }
+      // Combine all for display
+      const allDeliveries = [...ready, ...assigned, ...outForDelivery];
 
-      setReadyServices(ready.sort((a, b) => 
+      setReadyServices(allDeliveries.sort((a, b) => 
         new Date(a.createdAt || a.timestamp) - new Date(b.createdAt || b.timestamp)
       ));
 
-      // Calculate stats
-      const readyForDelivery = ready.filter(s => 
-        s.status === 'READY_FOR_DELIVERY' ||
-        s.status === 'ASSIGNED_TO_ROUTE'
-        // ❌ REMOVIDO: s.status === SERVICE_STATUS.PARTIAL_DELIVERY
-        // ❌ REMOVIDO: s.status === SERVICE_STATUS.COMPLETED
-      ).length;
-      const myDeliveries = services.filter(s => s.deliveryRepartidorId === user.id).length;
+      // Calculate stats from delivery services
+      const readyForDelivery = ready.length;
+      const myDeliveries = readyDeliveries.filter(s => s.repartidorId === user.id).length;
       const today = new Date().toDateString();
-      const todayDeliveries = services.filter(s => 
+      const todayDeliveries = readyDeliveries.filter(s => 
         s.deliveryDate && new Date(s.deliveryDate).toDateString() === today
       ).length;
 

@@ -606,6 +606,95 @@ class ServiceService {
       currency: 'MXN'
     }).format(price || 0);
   }
+
+  // 🆕 NUEVAS FUNCIONES PARA SERVICIOS DE ENTREGA
+
+  /**
+   * Create delivery service from original service
+   * @param {string} originalServiceId - ID of the original service
+   * @param {Object} deliveryData - Delivery service data
+   * @param {number} deliveryData.bagCount - Number of bags to deliver
+   * @param {string} deliveryData.deliveryType - Type: 'COMPLETE' or 'PARTIAL'
+   * @returns {Promise<Object>} Response with delivery service data
+   */
+  async createDeliveryService(originalServiceId, deliveryData) {
+    try {
+      const response = await api.post(`/services/${originalServiceId}/create-delivery`, deliveryData);
+      return response.data;
+    } catch (error) {
+      console.error('Create delivery service error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al crear servicio de entrega',
+        error
+      };
+    }
+  }
+
+  /**
+   * Get services by type (PICKUP or DELIVERY)
+   * @param {string} type - Service type: 'PICKUP' or 'DELIVERY'
+   * @param {Object} filters - Optional filters
+   * @returns {Promise<Object>} Services data
+   */
+  async getServicesByType(type, filters = {}) {
+    try {
+      const params = new URLSearchParams(filters).toString();
+      const response = await api.get(`/services/type/${type}?${params}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Get services by type error:`, error);
+      return {
+        success: false,
+        message: error.response?.data?.message || `Error al obtener servicios de ${type}`,
+        error
+      };
+    }
+  }
+
+  /**
+   * Get services ready for delivery
+   * @param {string} zone - Optional zone filter
+   * @returns {Promise<Object>} Delivery services data
+   */
+  async getReadyForDelivery(zone = null) {
+    try {
+      const params = zone ? `?zone=${zone}` : '';
+      const response = await api.get(`/services/ready-for-delivery${params}`);
+      return response.data;
+    } catch (error) {
+      console.error('Get ready for delivery error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al obtener servicios listos para entrega',
+        error
+      };
+    }
+  }
+
+  /**
+   * Update delivery service status
+   * @param {string} serviceId - Delivery service ID
+   * @param {string} status - New status
+   * @param {Object} deliveryData - Optional delivery data
+   * @returns {Promise<Object>} Response data
+   */
+  async updateDeliveryStatus(serviceId, status, deliveryData = {}) {
+    try {
+      const response = await api.put(`/services/${serviceId}/delivery-status`, {
+        status,
+        deliveryData
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Update delivery status error:', error);
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Error al actualizar estado de entrega',
+        error
+      };
+    }
+  }
 }
 
 export default new ServiceService();

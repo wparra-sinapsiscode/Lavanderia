@@ -160,23 +160,24 @@ const Pickup = () => {
     try {
       // Primero intentamos cargar desde la API
       if (isAdmin) {
-        // Admin puede ver todos los servicios
-        const servicesResponse = await serviceService.getAllServices();
+        // 🆕 Admin puede ver solo servicios PICKUP (no servicios de entrega)
+        const servicesResponse = await serviceService.getServicesByType('PICKUP');
         if (servicesResponse.success && servicesResponse.data) {
           services = servicesResponse.data;
-          console.log('🔍 DEBUG - Servicios cargados por admin:', services.length);
+          console.log('🔍 DEBUG - Servicios PICKUP cargados por admin:', services.length);
           services.forEach((service, index) => {
             console.log(`🔍 Servicio ${index + 1}:`, {
               id: service.id,
               guestName: service.guestName,
               status: service.status,
+              serviceType: service.serviceType,
               hasWeight: !!service.weight,
               hasPhotos: !!service.photos && service.photos.length > 0,
               hasSignature: !!service.signature
             });
           });
         } else {
-          throw new Error('No se pudieron obtener los servicios del administrador');
+          throw new Error('No se pudieron obtener los servicios PICKUP del administrador');
         }
       } else if (isRepartidor) {
         // Repartidor usa su endpoint específico

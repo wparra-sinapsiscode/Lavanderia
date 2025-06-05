@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { serviceStorage, bagLabelStorage } from '../../utils/storage';
 import { SERVICE_STATUS } from '../../types';
 import { SERVICE_STATUS_CONFIG } from '../../constants';
 import { useNotifications } from '../../store/NotificationContext';
@@ -103,21 +102,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
   // Normalizar el estado del servicio
   const normalizedServiceStatus = statusMapping[currentService.status] || currentService.status;
 
-  // 🔍 CALCULAR BOLSAS ENTREGADAS DESDE SERVICIOS HIJOS (igual que ProcessDecisionModal)
-  const services = serviceStorage.getServices();
-  const existingDeliveries = services.filter(s => 
-    s.originalServiceId === currentService.id && 
-    s.isDeliveryService === true
-  );
-  
-  // Obtener todas las bolsas ya entregadas de servicios hijos
-  const alreadyDeliveredFromChildren = existingDeliveries.flatMap(delivery => 
-    delivery.deliveryBags || []
-  );
-  
-  // Combinar con bolsas del servicio original (si las tiene)
+  // 🔍 CALCULAR BOLSAS ENTREGADAS - Solo del servicio actual (API only)
   const serviceDeliveredBags = currentService.deliveredBags || [];
-  const allDeliveredBags = [...new Set([...serviceDeliveredBags, ...alreadyDeliveredFromChildren])];
+  const allDeliveredBags = [...serviceDeliveredBags];
   
   // Detectar estado de entregas parciales con datos consolidados
   const hasPartialDeliveries = allDeliveredBags.length > 0;
@@ -136,9 +123,7 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     deliveredCount,
     remainingBags,
     fromService: serviceDeliveredBags,
-    fromChildren: alreadyDeliveredFromChildren,
     allDeliveredBags: allDeliveredBags,
-    existingDeliveries: existingDeliveries.length,
     isPartialInProgress
   });
 
@@ -293,37 +278,12 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     }
     
     // Cargar rótulos existentes si los hay
-    const labels = bagLabelStorage.getBagLabelsByService(currentService.id);
-    setExistingLabels(labels);
+    setExistingLabels([]);
     
     // Note: Auto-transition now happens in RotuladoForm when photos are added
   }, [currentService, normalizedServiceStatus]);
 
-  // 🔧 FIX: Detectar si el estado del servicio en localStorage es diferente al que tenemos
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      if (currentService?.id) {
-        const services = serviceStorage.getServices();
-        const currentServiceInStorage = services.find(s => s.id === currentService.id);
-        
-        if (currentServiceInStorage && currentServiceInStorage.status !== currentService.status) {
-          console.log('🔍 ServiceWorkflowModal: Detectado cambio de estado en localStorage:', {
-            serviceId: currentService.id,
-            modalStatus: currentService.status,
-            storageStatus: currentServiceInStorage.status,
-            modalUpdatedAt: currentService.updatedAt,
-            storageUpdatedAt: currentServiceInStorage.updatedAt
-          });
-          
-          // Ahora actualizamos automáticamente con el event listener
-          setCurrentService(currentServiceInStorage);
-          setSelectedStatus(currentServiceInStorage.status);
-        }
-      }
-    }, 1000); // Verificar cada segundo
-    
-    return () => clearInterval(interval);
-  }, [currentService]);
+  // ✅ Storage monitoring eliminado - Solo usar API
 
   // Update percentage when bags selection changes
   React.useEffect(() => {
@@ -388,50 +348,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       return;
     }
 
-    const services = serviceStorage.getServices();
-    const updatedServices = services.map(s => {
-      if (s.id === currentService.id) {
-        const updatedService = {
-          ...s,
-          status: selectedStatus,
-          internalNotes: (s.internalNotes || '') + 
-            ` | Estado actualizado a ${getStatusText(selectedStatus)} - ${new Date().toLocaleString('es-PE')}`
-        };
+    // Service update logic removed - using API only
 
-        // Add notes if provided
-        if (notes.trim()) {
-          updatedService.internalNotes += ` | Notas: ${notes.trim()}`;
-        }
-
-        // Handle partial delivery with bag details
-        if (selectedStatus === SERVICE_STATUS.PARTIAL_DELIVERY) {
-          const deliveredBags = selectedBags.filter(bag => bag.delivered);
-          updatedService.partialDeliveryPercentage = partialPercentage;
-          updatedService.deliveredBags = deliveredBags.map(bag => bag.number);
-          updatedService.remainingBags = selectedBags.filter(bag => !bag.delivered).map(bag => bag.number);
-          updatedService.internalNotes += ` | Entrega parcial: ${bagsToDeliver}/${currentService.bagCount} bolsas (${partialPercentage}%) | Entregadas: ${deliveredBags.map(b => b.number).join(', ')}`;
-        }
-
-        // Add timestamps for specific statuses
-        const now = new Date().toISOString();
-        switch (selectedStatus) {
-          case SERVICE_STATUS.PICKED_UP:
-            updatedService.pickupDate = now;
-            break;
-          case SERVICE_STATUS.LABELED:
-            updatedService.labeledDate = now;
-            break;
-          case SERVICE_STATUS.COMPLETED:
-            updatedService.deliveryDate = now;
-            break;
-        }
-
-        return updatedService;
-      }
-      return s;
-    });
-
-    serviceStorage.setServices(updatedServices);
+    // ✅ Solo usar API - localStorage eliminado
     
     success(
       'Estado Actualizado',
@@ -444,33 +363,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
 
   // Auto status update function (similar to handleStatusUpdate but without UI interaction)
   const handleAutoStatusUpdate = (newStatus, autoNote = '') => {
-    const services = serviceStorage.getServices();
-    const updatedServices = services.map(s => {
-      if (s.id === currentService.id) {
-        const updatedService = {
-          ...s,
-          status: newStatus,
-          internalNotes: (s.internalNotes || '') + 
-            ` | ${autoNote} - ${new Date().toLocaleString('es-PE')}`
-        };
+    // Auto status update logic removed - using API only
 
-        // Add timestamps for specific statuses
-        const now = new Date().toISOString();
-        switch (newStatus) {
-          case SERVICE_STATUS.IN_PROCESS:
-            updatedService.processStartDate = now;
-            break;
-          case SERVICE_STATUS.COMPLETED:
-            updatedService.deliveryDate = now;
-            break;
-        }
-
-        return updatedService;
-      }
-      return s;
-    });
-
-    serviceStorage.setServices(updatedServices);
+    // ✅ Solo usar API - localStorage eliminado
     
     success(
       'Estado Actualizado Automáticamente',
@@ -497,39 +392,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       
       // Si hay bolsas restantes por entregar O si ya todas están entregadas pero el estado no es COMPLETED
       if (remainingBags > 0 || (remainingBags === 0 && normalizedServiceStatus !== SERVICE_STATUS.COMPLETED)) {
-        // Actualizar el servicio a COMPLETED
-        const services = serviceStorage.getServices();
-        const updatedServices = services.map(s => {
-          if (s.id === service.id) {
-            const now = new Date().toISOString();
-            const updatedService = {
-              ...s,
-              status: SERVICE_STATUS.COMPLETED,
-              deliveryDate: now,
-              updatedAt: now,
-              // Marcar todas las bolsas restantes como entregadas
-              deliveredBags: [...(s.deliveredBags || []), ...remainingBagNumbers],
-              remainingBags: [],
-              partialDeliveryPercentage: 100,
-              internalNotes: (s.internalNotes || '') + 
-                (remainingBags > 0 
-                  ? ` | Entrega final completada: ${remainingBagNumbers.join(', ')} - ${new Date().toLocaleString('es-PE')} | Todas las bolsas entregadas | Servicio completado al 100%`
-                  : ` | Servicio marcado como completado - ${new Date().toLocaleString('es-PE')} | Todas las bolsas previamente entregadas | Servicio completado al 100%`)
-            };
-            
-            console.log('✅ Servicio completado:', {
-              id: updatedService.id,
-              status: updatedService.status,
-              deliveredBags: updatedService.deliveredBags,
-              remainingBags: updatedService.remainingBags
-            });
-            
-            return updatedService;
-          }
-          return s;
-        });
+        // Final delivery logic removed - using API only
         
-        serviceStorage.setServices(updatedServices);
+        // ✅ Solo usar API - localStorage eliminado
         
         success(
           'Entrega Completada',
@@ -559,9 +424,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     });
     
     try {
-      // Crear servicio de entrega completa
-      const services = serviceStorage.getServices();
-      const users = storage.get('USERS') || [];
+      // Complete delivery service creation removed - using API only
+      const users = [];
       
       // Extraer fecha de lavado
       const extractWashDate = (service) => {
@@ -625,26 +489,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
         timestamp: new Date().toISOString()
       };
       
-      // Actualizar servicio original a COMPLETED
-      const updatedServices = services.map(s => {
-        if (s.id === service.id) {
-          const now = new Date().toISOString();
-          return {
-            ...s,
-            status: SERVICE_STATUS.COMPLETED,
-            deliveryDate: now,
-            updatedAt: now,
-            partialDeliveryPercentage: 100,
-            internalNotes: (s.internalNotes || '') + 
-              ` | Entrega completa procesada - ${new Date().toLocaleString('es-PE')} | Servicio de entrega creado: ${deliveryServiceId} | Servicio completado`
-          };
-        }
-        return s;
-      });
+      // Service completion logic removed - using API only
       
-      // Agregar servicio de entrega a la lista
-      updatedServices.push(deliveryService);
-      serviceStorage.setServices(updatedServices);
+      // ✅ Solo usar API - localStorage eliminado
       
       console.log('✅ Servicio de entrega completa creado:', {
         originalId: service.id,
@@ -678,33 +525,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     });
     
     try {
-      // Actualizar en localStorage
-      const services = serviceStorage.getServices();
-      const updatedServices = services.map(s => {
-        if (s.id === service.id) {
-          const now = new Date().toISOString();
-          const updatedService = {
-            ...s,
-            status: SERVICE_STATUS.DELIVERY,
-            updatedAt: now,
-            internalNotes: (s.internalNotes || '') + 
-              ` | Estado actualizado a Entrega - ${new Date().toLocaleString('es-PE')} | Listo para tomar decisión de entrega`
-          };
+      // Status update to delivery removed - using API only
 
-          console.log('🔧 DEBUG: Guardando en localStorage estado DELIVERY:', {
-            serviceId: updatedService.id,
-            status: updatedService.status,
-            now: now,
-            internalNotes: updatedService.internalNotes
-          });
-
-          return updatedService;
-        }
-        return s;
-      });
-
-      console.log('🔧 DEBUG: Guardando servicios actualizados en localStorage');
-      serviceStorage.setServices(updatedServices);
+      // ✅ Solo usar API - localStorage eliminado
       
       success(
         'Estado Actualizado',
@@ -749,83 +572,24 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
       });
 
       if (apiResponse && apiResponse.success) {
-        console.log('Estado actualizado exitosamente en la API');
+        console.log('✅ Estado actualizado exitosamente en la API - Solo usando base de datos');
         
-        // IMPORTANTE: El backend NO guarda processStartDate, así que SIEMPRE actualizamos localStorage
-        console.log('🔧 DEBUG: Forzando actualización de localStorage porque backend no guarda processStartDate');
+        // Actualizar estado local del componente para reflejar cambios
+        setCurrentService(prev => ({
+          ...prev,
+          status: SERVICE_STATUS.IN_PROCESS,
+          processStartDate: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }));
         
-        // TAMBIÉN actualizar en localStorage para mantener sincronización
-        const services = serviceStorage.getServices();
-        const updatedServices = services.map(s => {
-          if (s.id === service.id) {
-            const now = new Date().toISOString();
-            const updatedService = {
-              ...s,
-              status: SERVICE_STATUS.IN_PROCESS,
-              processStartDate: now,
-              updatedAt: now,
-              internalNotes: (s.internalNotes || '') + 
-                ` | Estado actualizado a En Proceso - ${new Date().toLocaleString('es-PE')} | Proceso de lavandería iniciado`
-            };
-
-            console.log('🔧 DEBUG: Guardando en localStorage con processStartDate:', {
-              serviceId: updatedService.id,
-              status: updatedService.status,
-              processStartDate: updatedService.processStartDate,
-              now: now,
-              internalNotes: updatedService.internalNotes
-            });
-
-            return updatedService;
-          }
-          return s;
-        });
-
-        console.log('🔧 DEBUG: Guardando servicios actualizados en localStorage');
-        serviceStorage.setServices(updatedServices);
-        
-        // Verificar que se guardó correctamente
-        const verifyServices = serviceStorage.getServices();
-        const verifiedService = verifyServices.find(s => s.id === service.id);
-        console.log('🔧 DEBUG: Verificación después de guardar:', {
-          serviceId: service.id,
-          savedProcessStartDate: verifiedService?.processStartDate,
-          savedStatus: verifiedService?.status
-        });
+        setSelectedStatus(SERVICE_STATUS.IN_PROCESS);
       } else {
         throw new Error('Error al actualizar en la API');
       }
     } catch (apiError) {
-      console.warn('Error en API, actualizando localmente:', apiError);
-      
-      // Fallback: actualizar en almacenamiento local
-      const services = serviceStorage.getServices();
-      const updatedServices = services.map(s => {
-        if (s.id === service.id) {
-          const now = new Date().toISOString();
-          const updatedService = {
-            ...s,
-            status: SERVICE_STATUS.IN_PROCESS,
-            processStartDate: now,
-            updatedAt: now,
-            internalNotes: (s.internalNotes || '') + 
-              ` | Estado actualizado a En Proceso - ${new Date().toLocaleString('es-PE')} | Proceso de lavandería iniciado`
-          };
-
-          console.log('🔧 DEBUG: Fallback - Servicio actualizado localmente:', {
-            serviceId: updatedService.id,
-            status: updatedService.status,
-            processStartDate: updatedService.processStartDate,
-            now: now,
-            notes: updatedService.internalNotes
-          });
-
-          return updatedService;
-        }
-        return s;
-      });
-
-      serviceStorage.setServices(updatedServices);
+      console.error('❌ Error al actualizar estado a EN PROCESO:', apiError);
+      error('Error', 'No se pudo actualizar el estado del servicio');
+      throw apiError;
     }
     
     success(
@@ -854,9 +618,9 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
     const isNextAvailable = step.status === SERVICE_STATUS.LABELED && (normalizedServiceStatus === SERVICE_STATUS.PICKED_UP || normalizedServiceStatus === SERVICE_STATUS.IN_PROCESS);
     
     // Check if IN_PROCESS should be available (when service has rotulado data with photos)
-    const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
-    const hasLabelData = serviceLabels.length > 0 && serviceLabels.some(label => label.label && label.label.trim() !== '');
-    const hasPhotoDataFromLabels = serviceLabels.length > 0 && serviceLabels.some(label => label.photo && label.photo.trim() !== '');
+    // Using only service data - localStorage removed
+    const hasLabelData = false;
+    const hasPhotoDataFromLabels = false;
     
     // También verificar fotos directamente del servicio (para servicios que vienen del backend)
     const hasPhotosFromService = service.labelingPhotos && service.labelingPhotos.length > 0;
@@ -1097,8 +861,8 @@ const ServiceWorkflowModal = ({ service, onClose, onStatusUpdated }) => {
                 
                 {/* Next Step Available Notification */}
                 {(() => {
-                  const serviceLabels = bagLabelStorage.getBagLabelsByService(service.id);
-                  const hasPhotoData = serviceLabels.length > 0 && serviceLabels.some(label => label.photo && label.photo.trim() !== '');
+                  // ✅ Solo usar datos del servicio - sin storage
+                  const hasPhotoData = currentService.labelingPhotos && currentService.labelingPhotos.length > 0;
                   
                   if (normalizedServiceStatus === SERVICE_STATUS.LABELED && hasPhotoData) {
                     return (

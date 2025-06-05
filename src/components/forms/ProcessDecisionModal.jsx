@@ -113,297 +113,120 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
 
   const handleComplete = async () => {
     console.log('🎯 Procesando entrega completa para:', service.id);
-    console.log('🔧 DEBUG: handleComplete iniciado, stack trace:', new Error().stack);
+    console.log('📊 Estado actual del servicio:', service.status);
+    console.log('📦 Bolsas ya entregadas:', allDeliveredBags.length);
     
     try {
-      // Crear servicio de entrega y completar el actual
-      console.log('🔧 DEBUG: Llamando createDeliveryService...');
-      createDeliveryService(service.bagCount, 'COMPLETE');
+      // 🔧 NUEVO: Si hay entregas parciales previas, no permitir entrega completa
+      if (allDeliveredBags.length > 0) {
+        error('Error', 'Ya existen entregas parciales. Use la opción de entrega parcial para continuar.');
+        return;
+      }
+
+      // 🔧 NUEVO: Si el servicio está en PARTIAL_DELIVERY, actualizarlo primero a IN_PROCESS
+      if (service.status === SERVICE_STATUS.PARTIAL_DELIVERY) {
+        console.log('🔄 Servicio en PARTIAL_DELIVERY, actualizando a IN_PROCESS primero...');
+        
+        try {
+          const updateResponse = await serviceService.updateServiceStatus(service.id, {
+            status: SERVICE_STATUS.IN_PROCESS,
+            internalNotes: `Estado actualizado temporalmente para permitir entrega completa - ${new Date().toLocaleString('es-PE')}`
+          });
+          
+          if (!updateResponse || !updateResponse.success) {
+            console.warn('⚠️ No se pudo actualizar el estado a IN_PROCESS');
+          } else {
+            console.log('✅ Estado actualizado a IN_PROCESS exitosamente');
+          }
+        } catch (updateError) {
+          console.warn('⚠️ Error al actualizar estado previo:', updateError);
+          // Continuar de todos modos, el backend podría aceptarlo
+        }
+      }
+
+      // 🆕 Usar nueva API para crear servicio de entrega
+      const response = await serviceService.createDeliveryService(service.id, {
+        bagCount: service.bagCount,
+        deliveryType: 'COMPLETE'
+      });
       
-      console.log('🔧 DEBUG: Llamando updateServiceStatus con COMPLETED...');
-      const updateSuccess = await updateServiceStatus(SERVICE_STATUS.COMPLETED);
-      
-      console.log('🔧 DEBUG: updateServiceStatus retornó:', updateSuccess);
-      
-      if (updateSuccess) {
-        console.log('✅ DEBUG: handleComplete completado exitosamente - servicio marcado como COMPLETED');
+      if (response.success) {
+        console.log('✅ Servicio de entrega creado exitosamente:', response.data);
         
         success(
           'Entrega Completa Procesada',
-          `Servicio completado. Se creó automáticamente el servicio de entrega para ${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}.`
+          `Se creó automáticamente el servicio de entrega para ${service.bagCount} bolsa${service.bagCount !== 1 ? 's' : ''}`
         );
         
+        // Notificar actualización y cerrar
         onStatusUpdated();
         onClose();
       } else {
-        throw new Error('No se pudo actualizar el estado del servicio');
+        throw new Error(response.message || 'Error al crear servicio de entrega');
       }
-    } catch (error) {
-      console.error('❌ Error en handleComplete:', error);
-      error('Error', 'No se pudo completar el proceso de entrega');
+    } catch (err) {
+      console.error('❌ Error en handleComplete:', err);
+      
+      // 🔧 NUEVO: Mensaje de error más específico según el tipo de error
+      if (err.message && err.message.includes('EN PROCESO')) {
+        error('Error', 'El servicio debe estar en estado "En Proceso" para crear una entrega completa. Intente usar entrega parcial.');
+      } else {
+        error('Error', err.message || 'No se pudo completar el proceso de entrega');
+      }
     }
   };
 
-  const handlePartial = () => {
+  const handlePartial = async () => {
     if (bagsToDeliver === 0) {
       error('Error', 'Debes seleccionar al menos una bolsa para entrega parcial');
       return;
     }
     
-    console.log('🎯 Procesando entrega parcial para:', service.id, 'Bolsas:', bagsToDeliver);
+    // 🔧 NUEVO: Calcular las bolsas restantes considerando las ya entregadas
+    const totalDeliveredAfterThis = allDeliveredBags.length + bagsToDeliver;
+    const actualRemainingBags = service.bagCount - totalDeliveredAfterThis;
     
-    // Crear servicio de entrega para las bolsas entregadas
-    const deliveredBags = selectedBags.filter(bag => bag.delivered && !bag.isBlocked);
-    const remainingBags = selectedBags.filter(bag => !bag.delivered && !bag.isBlocked);
-    const alreadyDelivered = selectedBags.filter(bag => bag.isBlocked);
-    
-    // Crear el servicio de entrega con las bolsas seleccionadas
-    createDeliveryService(deliveredBags.length, 'PARTIAL', deliveredBags);
-    
-    // Verificar si todas las bolsas han sido entregadas después de esta entrega
-    const totalDeliveredAfterThis = alreadyDelivered.length + deliveredBags.length;
-    const willBeCompleted = totalDeliveredAfterThis >= service.bagCount;
-    
-    if (willBeCompleted) {
-      // Si todas las bolsas ya fueron entregadas, marcar como completado
-      updateServiceStatus(SERVICE_STATUS.COMPLETED, {
-        deliveredBags: [...alreadyDelivered.map(bag => bag.number), ...deliveredBags.map(bag => bag.number)],
-        remainingBags: [],
-        partialDeliveryPercentage: 100
-      });
-      
-      success(
-        'Servicio Completado',
-        `Se creó la última entrega para ${bagsToDeliver} bolsas. ¡Todas las ${service.bagCount} bolsas han sido entregadas! El servicio está completado.`
-      );
-    } else {
-      // Actualizar el servicio original con información de entrega parcial
-      const statusUpdated = updateServiceStatus(SERVICE_STATUS.PARTIAL_DELIVERY, {
-        deliveredBags: [...alreadyDelivered.map(bag => bag.number), ...deliveredBags.map(bag => bag.number)],
-        remainingBags: remainingBags.map(bag => bag.number),
-        partialDeliveryPercentage: Math.round((totalDeliveredAfterThis / service.bagCount) * 100)
-      });
-      
-      if (statusUpdated) {
-        success(
-          'Entrega Parcial Procesada',
-          `Se creó servicio de entrega para ${bagsToDeliver} bolsas. El servicio cambió a estado ENTREGA PARCIAL. Quedan ${remainingBags.length} bolsas pendientes.`
-        );
-      } else {
-        error('Error', 'No se pudo actualizar el estado del servicio');
-        return;
-      }
-    }
-    
-    // Llamar onStatusUpdated inmediatamente, luego cerrar
-    console.log('🔄 Notificando actualización de estado inmediatamente...');
-    onStatusUpdated();
-    
-    // Pequeño delay antes de cerrar para que el componente padre pueda actualizar
-    setTimeout(() => {
-      console.log('🔄 Cerrando ProcessDecisionModal...');
-      onClose();
-    }, 100); // Delay mínimo solo para el cierre
-  };
-
-  const createDeliveryService = (bagCount, deliveryType, selectedBagsData = []) => {
-    console.log('🔧 DEBUG: createDeliveryService INICIADO para:', service.id, 'tipo:', deliveryType);
-    const services = serviceStorage.getServices();
-    const users = storage.get(APP_CONFIG.STORAGE_KEYS.USERS) || [];
-    
-    // 🔍 VALIDAR SERVICIOS DE ENTREGA EXISTENTES
-    const existingDeliveries = services.filter(s => 
-      s.originalServiceId === service.id && 
-      s.isDeliveryService === true
-    );
-    
-    console.log('🔍 Validando servicios de entrega existentes:', {
+    console.log('🎯 Procesando entrega parcial:', {
       serviceId: service.id,
-      existingDeliveries: existingDeliveries.length,
-      deliveries: existingDeliveries.map(d => ({
-        id: d.id,
-        bagCount: d.bagCount,
-        deliveryBags: d.deliveryBags,
-        status: d.status
-      }))
+      bolsasAEntregar: bagsToDeliver,
+      yaEntregadas: allDeliveredBags.length,
+      totalDespues: totalDeliveredAfterThis,
+      restantes: actualRemainingBags
     });
     
-    // 🎯 VALIDACIÓN: Para entrega completa, verificar si ya existe un servicio de entrega
-    if (deliveryType === 'COMPLETE') {
-      const existingCompleteDelivery = existingDeliveries.find(d => 
-        d.bagCount === service.bagCount && 
-        (d.status === 'READY_FOR_DELIVERY' || d.status === 'ASSIGNED_TO_ROUTE' || d.status === 'DELIVERED')
-      );
-      
-      if (existingCompleteDelivery) {
-        console.log('⚠️ Ya existe un servicio de entrega completa para este servicio:', {
-          existingDeliveryId: existingCompleteDelivery.id,
-          existingStatus: existingCompleteDelivery.status,
-          existingBagCount: existingCompleteDelivery.bagCount
-        });
-        
-        // Retornar el servicio existente en lugar de crear uno nuevo
-        return existingCompleteDelivery;
-      }
-    }
-    
-    // 🎯 VALIDACIÓN: Para entrega parcial, verificar bolsas específicas
-    if (deliveryType === 'PARTIAL') {
-      const selectedBagNumbers = selectedBagsData.map(b => b.number);
-      const overlappingDelivery = existingDeliveries.find(d => {
-        const existingBags = d.deliveryBags || [];
-        return selectedBagNumbers.some(bag => existingBags.includes(bag));
+    try {
+      // 🆕 Usar nueva API para crear servicio de entrega parcial
+      const response = await serviceService.createDeliveryService(service.id, {
+        bagCount: bagsToDeliver,
+        deliveryType: 'PARTIAL'
       });
       
-      if (overlappingDelivery) {
-        console.log('⚠️ Hay overlap de bolsas con servicio de entrega existente:', {
-          existingDeliveryId: overlappingDelivery.id,
-          existingBags: overlappingDelivery.deliveryBags,
-          selectedBags: selectedBagNumbers,
-          overlap: selectedBagNumbers.filter(bag => overlappingDelivery.deliveryBags.includes(bag))
-        });
+      if (response.success) {
+        console.log('✅ Servicio de entrega parcial creado exitosamente:', response.data);
         
-        console.warn('Se intenta crear entrega parcial con bolsas ya asignadas');
-        // Podríamos retornar error o ajustar las bolsas, por ahora continuamos con log de warning
+        // 🔧 MEJORADO: Mensaje basado en las bolsas REALMENTE restantes
+        if (actualRemainingBags === 0) {
+          success(
+            'Servicio Completado',
+            `Se creó la última entrega para ${bagsToDeliver} bolsas. ¡Todas las ${service.bagCount} bolsas han sido entregadas!`
+          );
+        } else {
+          success(
+            'Entrega Parcial Procesada',
+            `Se creó servicio de entrega para ${bagsToDeliver} bolsas. Quedan ${actualRemainingBags} bolsas pendientes.`
+          );
+        }
+        
+        // Notificar actualización y cerrar
+        onStatusUpdated();
+        onClose();
+      } else {
+        throw new Error(response.message || 'Error al crear servicio de entrega parcial');
       }
+    } catch (err) {
+      console.error('❌ Error en handlePartial:', err);
+      error('Error', err.message || 'No se pudo procesar la entrega parcial');
     }
-    
-    console.log('✅ Validación pasada, creando nuevo servicio de entrega...');
-    
-    // Asignar repartidor automáticamente por zona del hotel
-    const assignedRepartidor = assignRepartidorByZone(service.hotel, users);
-    
-    // Generar ID único para el servicio de entrega
-    const deliveryServiceId = `delivery-${service.id}-${Date.now()}`;
-    
-    console.log('🚛 Creando servicio de entrega:', {
-      originalServiceId: service.id,
-      deliveryServiceId,
-      bagCount,
-      deliveryType,
-      selectedBags: selectedBagsData.map(b => b.number),
-      assignedRepartidor: assignedRepartidor?.name
-    });
-    
-    // Calcular peso proporcional para entrega parcial
-    const proportionalWeight = deliveryType === 'COMPLETE' 
-      ? service.weight 
-      : service.weight ? (parseFloat(service.weight) * (bagCount / service.bagCount)).toFixed(1) : null;
-    
-    // Extraer fecha de lavado del historial del servicio original
-    const extractWashDate = (service) => {
-      // Prioridad 1: processStartDate directo
-      if (service.processStartDate) {
-        return service.processStartDate;
-      }
-      
-      // Prioridad 2: buscar en internalNotes formato [PROCESS_START_DATE:...]
-      if (service.internalNotes && service.internalNotes.includes('[PROCESS_START_DATE:')) {
-        const match = service.internalNotes.match(/\[PROCESS_START_DATE:([^\]]+)\]/);
-        if (match && match[1]) {
-          return match[1];
-        }
-      }
-      
-      // Prioridad 3: buscar "Estado actualizado a En Proceso" en internalNotes
-      if (service.internalNotes && service.internalNotes.includes('Estado actualizado a En Proceso')) {
-        const notes = service.internalNotes.split('|');
-        const processNote = notes.find(note => note.includes('Estado actualizado a En Proceso'));
-        if (processNote) {
-          const match = processNote.match(/(\d{1,2}\/\d{1,2}\/\d{4},?\s*\d{1,2}:\d{2}:\d{2}\s*[ap]\.?\s*m\.?)/i);
-          if (match) {
-            return new Date(match[1]).toISOString();
-          }
-        }
-      }
-      
-      // Fallback: usar fecha de creación del servicio
-      return service.createdAt || service.timestamp || new Date().toISOString();
-    };
-    
-    const washDate = extractWashDate(service);
-    
-    // Crear el nuevo servicio de entrega
-    const deliveryService = {
-      id: deliveryServiceId,
-      // Información del cliente (igual que el servicio original)
-      guestName: service.guestName,
-      roomNumber: service.roomNumber,
-      hotel: service.hotel,
-      hotelId: service.hotelId,
-      
-      // Información de entrega
-      bagCount: bagCount,
-      weight: proportionalWeight,
-      
-      // Información de proceso
-      observations: `Servicio de entrega - ${deliveryType === 'COMPLETE' ? 'Completa' : 'Parcial'} | Servicio origen: ${service.id}`,
-      specialInstructions: service.specialInstructions || '',
-      priority: service.priority || 'NORMAL',
-      
-      // Fechas
-      pickupDate: new Date().toISOString(), // Fecha de "recogida" desde lavandería
-      estimatedPickupDate: new Date().toISOString(),
-      labeledDate: new Date().toISOString(), // Ya está procesado
-      deliveryDate: null,
-      estimatedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // +2 días
-      
-      // Estado inicial del servicio de entrega
-      status: 'READY_FOR_DELIVERY',
-      
-      // Datos del servicio de entrega
-      photos: service.labelingPhotos || service.photos || [], // Fotos de los rótulos como referencia
-      labelingPhotos: service.labelingPhotos || [], // Fotos específicas de rotulado
-      signature: null,
-      collectorName: null, // Se llenará cuando alguien recoja
-      geolocation: null,
-      repartidorId: assignedRepartidor?.id || null,
-      deliveryRepartidorId: assignedRepartidor?.id || null,
-      deliveryRepartidor: assignedRepartidor?.name || null,
-      
-      // Información adicional
-      partialDeliveryPercentage: deliveryType === 'PARTIAL' ? partialPercentage : 100,
-      price: service.price || null,
-      pickupTimeSlot: null,
-      customerNotes: `Entrega de servicio de lavandería procesado`,
-      
-      // Notas internas detalladas
-      internalNotes: [
-        `[${new Date().toLocaleString('es-PE')}] Servicio de entrega creado automáticamente`,
-        `Servicio origen: ${service.id}`,
-        `Tipo: ${deliveryType} (${bagCount}/${service.bagCount} bolsas)`,
-        deliveryType === 'PARTIAL' ? `Bolsas para entregar: ${selectedBagsData.map(b => b.number).join(', ')}` : '',
-        `Cliente: ${service.guestName} - Hab. ${service.roomNumber}`,
-        `Hotel: ${typeof service.hotel === 'object' ? service.hotel.name : service.hotel}`,
-        assignedRepartidor ? `Repartidor asignado: ${assignedRepartidor.name}` : 'Sin repartidor asignado'
-      ].filter(Boolean).join(' | '),
-      
-      // Campos específicos de entrega
-      originalServiceId: service.id, // Referencia al servicio original
-      serviceType: 'DELIVERY', // Tipo de servicio
-      isDeliveryService: true, // Flag para identificar servicios de entrega
-      deliveryBags: selectedBagsData.map(b => b.number), // Bolsas específicas para entregar
-      washDate: washDate, // Fecha de inicio del proceso de lavandería
-      
-      // Metadatos
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      timestamp: new Date().toISOString()
-    };
-    
-    // Agregar el servicio de entrega a la lista
-    const updatedServices = [...services, deliveryService];
-    serviceStorage.setServices(updatedServices);
-    
-    console.log(`✅ Servicio de entrega creado:`, {
-      id: deliveryServiceId,
-      bagCount,
-      deliveryType,
-      bags: selectedBagsData.map(b => b.number),
-      status: 'READY_FOR_DELIVERY'
-    });
-    
-    return deliveryService;
   };
 
   const updateServiceStatus = async (newStatus, additionalData = {}) => {
@@ -441,20 +264,20 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
     console.log('💾 Actualizando en localStorage para sincronización inmediata...');
     let services = serviceStorage.getServices();
       
-      // Verificar si el servicio existe en localStorage
-      const serviceExists = services.find(s => s.id === service.id);
-      if (!serviceExists) {
-        console.warn('⚠️ Servicio no encontrado en localStorage, agregándolo:', service.id);
-        services.push({
-          ...service,
-          updatedAt: service.updatedAt || new Date().toISOString(),
-          internalNotes: service.internalNotes || ''
-        });
-      }
-      
-      const updatedServices = services.map(s => {
-        if (s.id === service.id) {
-          const updatedService = {
+    // Verificar si el servicio existe en localStorage
+    const serviceExists = services.find(s => s.id === service.id);
+    if (!serviceExists) {
+      console.warn('⚠️ Servicio no encontrado en localStorage, agregándolo:', service.id);
+      services.push({
+        ...service,
+        updatedAt: service.updatedAt || new Date().toISOString(),
+        internalNotes: service.internalNotes || ''
+      });
+    }
+    
+    const updatedServices = services.map(s => {
+      if (s.id === service.id) {
+        const updatedService = {
           ...s,
           status: newStatus,
           updatedAt: new Date().toISOString(),
@@ -564,8 +387,8 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
           internalNotes: verifyUpdate?.internalNotes
         }).then(response => {
           console.log('🌐 Estado también actualizado en API:', response);
-        }).catch(err => {
-          console.warn('⚠️ No se pudo actualizar en API:', err);
+        }).catch(apiErr => {
+          console.warn('⚠️ No se pudo actualizar en API:', apiErr);
         });
       }
     } catch (e) {
@@ -660,11 +483,11 @@ const ProcessDecisionModal = ({ service, onClose, onStatusUpdated }) => {
             </h4>
             
             {/* Complete Option */}
-            <Card className="border-green-200 hover:border-green-300 transition-colors">
+            <Card className={`border-green-200 ${allDeliveredBags.length > 0 ? 'opacity-60' : 'hover:border-green-300'} transition-colors`}>
               <Card.Content className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <CheckCircle className="h-8 w-8 text-green-600 mr-3" />
+                    <CheckCircle className={`h-8 w-8 ${allDeliveredBags.length > 0 ? 'text-gray-400' : 'text-green-600'} mr-3`} />
                     <div>
                       <h5 className="font-medium text-gray-900">Terminado Completo</h5>
                       <p className="text-sm text-gray-600">

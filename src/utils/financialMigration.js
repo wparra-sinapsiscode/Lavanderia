@@ -1,7 +1,8 @@
 // Utilidades para migración financiera - NO modifica código existente
 // Solo agrega funcionalidad nueva
 
-import { serviceStorage, hotelStorage, financeStorage } from './storage';
+import { serviceStorage, hotelStorage } from './storage';
+import transactionService from '../services/transaction.service';
 import { calculateServicePrice } from './index';
 
 // Configuración de precios por defecto
@@ -80,7 +81,13 @@ export const createServiceTransaction = (service, hotel, amount, source = 'MIGRA
     notes: source === 'MIGRATION' ? 'Transacción creada por migración' : 'Transacción automática'
   };
 
-  financeStorage.addTransaction(transaction);
+  // ✅ Usar API en lugar de storage
+  try {
+    transactionService.createTransaction(transaction);
+  } catch (error) {
+    console.error('Error creando transacción:', error);
+  }
+  
   return transaction;
 };
 

@@ -186,13 +186,13 @@ export const SERVICE_STATUS_CONFIG = {
     badgeClasses: 'bg-red-100 text-red-800 border border-red-300'
   },
   READY_FOR_DELIVERY: {
-    label: 'Listo para Entrega',
-    action: 'Listo para Entrega',
-    color: 'cyan',
-    bgColor: 'bg-cyan-100',
-    textColor: 'text-cyan-800',
-    borderColor: 'border-cyan-300',
-    badgeClasses: 'bg-cyan-100 text-cyan-800 border border-cyan-300'
+    label: 'Esperando',
+    action: 'Esperando',
+    color: 'amber',
+    bgColor: 'bg-amber-100',
+    textColor: 'text-amber-800',
+    borderColor: 'border-amber-300',
+    badgeClasses: 'bg-amber-100 text-amber-800 border border-amber-300'
   },
   OUT_FOR_DELIVERY: {
     label: 'En Entrega',
